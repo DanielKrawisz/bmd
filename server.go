@@ -14,9 +14,7 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"os/user"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -713,14 +711,7 @@ func newServer(listenAddrs []string, db database.Db,
 		return nil, err
 	}
 
-	// get data directory
-	user, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current user: %v", err)
-	}
-	dataDir := strings.Replace(DataDir, "$HOME", user.HomeDir, 1)
-
-	amgr := addrmgr.New(dataDir, net.LookupIP)
+	amgr := addrmgr.New(cfg.DataDir, net.LookupIP)
 
 	var listeners []peer.Listener
 	ipv4Addrs, ipv6Addrs, wildcard, err := parseListeners(listenAddrs)

@@ -8,6 +8,7 @@
 package main
 
 import (
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,11 @@ const (
 	// supposed to be a rough estimate, not an exact value. Requests are
 	// cleaned after every objectRequestTimeout/2 time.
 	objectRequestTimeout = time.Minute * 2
+
+	// objectDbNamePrefix is the prefix for the object database name. The
+	// database type is appended to this value to form the full object database
+	// name.
+	objectDbNamePrefix = "objects"
 )
 
 // newPeerMsg signifies a newly connected peer to the object manager.
@@ -296,6 +302,17 @@ func newObjectManager(s *server) *ObjectManager {
 	}
 }
 
+// objectDbPath returns the path to the object database given a database type.
+func objectDbPath(dbType string) string {
+	// The database name is based on the database type.
+	dbName := objectDbNamePrefix + "_" + dbType
+	if dbType == "sqlite" {
+		dbName = dbName + ".db"
+	}
+	dbPath := filepath.Join(cfg.DataDir, dbName)
+	return dbPath
+}
+
 // warnMultipeDBs shows a warning if multiple database types are detected.
 // This is not a situation most users want.  It is handy for development however
 // to support multiple side-by-side databases.
@@ -323,11 +340,10 @@ func warnMultipeDBs(dbType string) {
 	}
 }
 
-// setupDB loads (or creates when needed) the block database taking into
-// account the selected database backend.  It also contains additional logic
+// setupDB loads (or creates when needed) the object database taking into
+// account the selected database backend. It also contains additional logic
 // such warning the user if there are multiple databases which consume space on
-// the file system and ensuring the regression test database is clean when in
-// regression test mode.
+// the file system.
 func setupDB(dbType, dbPath string) (database.Db, error) {
 	// The memdb backend does not have a file path associated with it, so
 	// handle it uniquely.  We also don't want to worry about the multiple
