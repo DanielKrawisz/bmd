@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package bmpeer_test
+package peer_test
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monetas/bmd/bmpeer"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil"
 	"github.com/monetas/bmutil/identity"
 	"github.com/monetas/bmutil/wire"
@@ -269,7 +269,7 @@ func TestSendQueueStartStop(t *testing.T) {
 	conn := NewMockConnection(true, false)
 	db := NewMockDb()
 
-	queue := bmpeer.NewSendQueue(bmpeer.NewInventory(), db)
+	queue := peer.NewSendQueue(peer.NewInventory(), db)
 
 	if queue.Running() {
 		t.Errorf("queue should not be running yet. ")
@@ -294,7 +294,7 @@ func TestSendQueueStartStop(t *testing.T) {
 	startChan := make(chan struct{})
 	stopChan := make(chan struct{})
 	go func () {
-		bmpeer.TstSendQueueStartWait(queue, conn, waitChan, startChan)
+		peer.TstSendQueueStartWait(queue, conn, waitChan, startChan)
 		stopChan <- struct{}{}
 	} ()
 	// Make sure the queue is definitely in the middle of starting. 
@@ -307,7 +307,7 @@ func TestSendQueueStartStop(t *testing.T) {
 	}
 	
 	go func () {
-		bmpeer.TstSendQueueStopWait(queue, waitChan, startChan)
+		peer.TstSendQueueStopWait(queue, waitChan, startChan)
 		stopChan <- struct{}{}
 	} ()
 	// Make sure the queue is in the process of stopping already. 
@@ -325,7 +325,7 @@ func TestSendMessage(t *testing.T) {
 	db := NewMockDb()
 	var err error
 
-	queue := bmpeer.NewSendQueue(bmpeer.NewInventory(), db)
+	queue := peer.NewSendQueue(peer.NewInventory(), db)
 
 	message := &wire.MsgVerAck{}
 
@@ -403,7 +403,7 @@ func TestRequestData(t *testing.T) {
 	db := NewMockDb()
 	var err error
 
-	queue := bmpeer.NewSendQueue(bmpeer.NewInventory(), db)
+	queue := peer.NewSendQueue(peer.NewInventory(), db)
 
 	message := wire.NewMsgUnknownObject(345, time.Now(), wire.ObjectType(4), 1, 1, []byte{77, 82, 53, 48, 96, 1})
 
@@ -543,7 +543,7 @@ func TestQueueInv(t *testing.T) {
 	db := NewMockDb()
 
 	var err error
-	queue := bmpeer.NewSendQueue(bmpeer.NewInventory(), db)
+	queue := peer.NewSendQueue(peer.NewInventory(), db)
 
 	// The queue isn't running yet, so this should return an error.
 	err = queue.QueueInventory([]*wire.InvVect{&wire.InvVect{Hash: *randomShaHash()}})
@@ -561,16 +561,16 @@ func TestQueueInv(t *testing.T) {
 	}()
 
 	// Send a tick without any invs having been sent.
-	bmpeer.TstSendQueueStart(queue, conn)
-	bmpeer.TstSendQueueStartQueueHandler(queue, ticker)
+	peer.TstSendQueueStart(queue, conn)
+	peer.TstSendQueueStartQueueHandler(queue, ticker)
 	// Time for the send queue to get started.
 	time.Sleep(time.Millisecond * 50)
 	tickerChan <- time.Now()
 
 	queue.Stop()
-	bmpeer.TstSendQueueStart(queue, conn)
+	peer.TstSendQueueStart(queue, conn)
 	close(reset)
-	bmpeer.TstSendQueueStartQueueHandler(queue, ticker)
+	peer.TstSendQueueStartQueueHandler(queue, ticker)
 
 	// Send an inv and try to get an inv message.
 	inv := &wire.InvVect{Hash: *randomShaHash()}
@@ -593,7 +593,7 @@ func TestQueueInv(t *testing.T) {
 	}
 
 	queue.Stop()
-	bmpeer.TstSendQueueStart(queue, conn)
+	peer.TstSendQueueStart(queue, conn)
 
 	// Fill up the channel.
 	i := 0
@@ -616,11 +616,11 @@ func TestQueueInv(t *testing.T) {
 		t.Error("Should have got a queue full error.")
 	}
 
-	bmpeer.TstSendQueueStartQueueHandler(queue, ticker)
+	peer.TstSendQueueStartQueueHandler(queue, ticker)
 	queue.Stop()
 
-	bmpeer.TstSendQueueStart(queue, conn)
-	bmpeer.TstSendQueueStartQueueHandler(queue, ticker)
+	peer.TstSendQueueStart(queue, conn)
+	peer.TstSendQueueStartQueueHandler(queue, ticker)
 
 	for i = 0; i < 6; i++ {
 		invTrickleSize := 1200
@@ -647,8 +647,8 @@ func TestQueueInv(t *testing.T) {
 	close(reset)
 	
 	// Finally, test the line that drains invSendQueue if the program disconnects.
-	bmpeer.TstSendQueueStart(queue, conn)
-	bmpeer.TstSendQueueStartQueueHandler(queue, ticker)
+	peer.TstSendQueueStart(queue, conn)
+	peer.TstSendQueueStartQueueHandler(queue, ticker)
 	
 	for i = 0; i < 6; i++ {
 		invTrickleSize := 1200
@@ -664,7 +664,7 @@ func TestQueueInv(t *testing.T) {
 	
 	// Start and stop again to make sure the test doesn't end before the queue
 	// has shut down the last time. 
-	bmpeer.TstSendQueueStart(queue, conn)
+	peer.TstSendQueueStart(queue, conn)
 	queue.Stop()
 }
 
@@ -687,17 +687,17 @@ func TestRetrieveObject(t *testing.T) {
 	db.InsertObject(goodData)
 
 	// Retrieve objects that are not in the database.
-	if bmpeer.TstRetrieveObject(db, notThere) != nil {
+	if peer.TstRetrieveObject(db, notThere) != nil {
 		t.Error("Object returned that should not have been in the database.")
 	}
 
 	// Retrieve invalid objects from the database.
-	if bmpeer.TstRetrieveObject(db, badInv) != nil {
+	if peer.TstRetrieveObject(db, badInv) != nil {
 		t.Error("Object returned that should have been detected to be invalid.")
 	}
 
 	// Retrieve good objects from the database.
-	if bmpeer.TstRetrieveObject(db, goodInv) == nil {
+	if peer.TstRetrieveObject(db, goodInv) == nil {
 		t.Error("No object returned.")
 	}
 }

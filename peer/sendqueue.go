@@ -5,7 +5,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package bmpeer
+package peer
 
 import (
 	"container/list"
@@ -31,10 +31,10 @@ const (
 // we have, which will be periodically sent to the peer in a series of inv
 // messages.
 type SendQueue interface {
-	// QueueMessage queues a message to be sent to the peer. 
+	// QueueMessage queues a message to be sent to the peer.
 	QueueMessage(wire.Message) error
-	
-	// QueueDataRequest 
+
+	// QueueDataRequest
 	QueueDataRequest([]*wire.InvVect) error
 
 	// QueueInventory adds the passed inventory to the inventory send queue which
@@ -48,23 +48,23 @@ type SendQueue interface {
 	Stop()
 }
 
-// sendQueue is an instance of SendQueue. 
+// sendQueue is an instance of SendQueue.
 type sendQueue struct {
 	trickleTime time.Duration
 
-	// Sends messages to the outHandler function. 
-	msgQueue      chan wire.Message
+	// Sends messages to the outHandler function.
+	msgQueue chan wire.Message
 	// Sends messages from the dataRequestHandler to the outHandler function.
-	dataQueue     chan wire.Message
-	// sends new inv data to be queued up and trickled to the other peer eventually. 
+	dataQueue chan wire.Message
+	// sends new inv data to be queued up and trickled to the other peer eventually.
 	outputInvChan chan []*wire.InvVect
-	// 
-	requestQueue  chan []*wire.InvVect
+	//
+	requestQueue chan []*wire.InvVect
 	// used to turn off the sendQueue
-	quit          chan struct{}
-	
-	resetWg       sync.WaitGroup
-	doneWg        sync.WaitGroup
+	quit chan struct{}
+
+	resetWg sync.WaitGroup
+	doneWg  sync.WaitGroup
 
 	// An internet connection to another bitmessage node.
 	conn Connection
@@ -78,6 +78,7 @@ type sendQueue struct {
 	stopped int32
 }
 
+// QueueMessage
 func (sq *sendQueue) QueueMessage(msg wire.Message) error {
 	if !sq.Running() {
 		return errors.New("Not running.")
@@ -91,6 +92,7 @@ func (sq *sendQueue) QueueMessage(msg wire.Message) error {
 	}
 }
 
+// QueueDataRequest
 func (sq *sendQueue) QueueDataRequest(inv []*wire.InvVect) error {
 	if !sq.Running() {
 		return errors.New("Not running.")
@@ -104,6 +106,8 @@ func (sq *sendQueue) QueueDataRequest(inv []*wire.InvVect) error {
 	}
 }
 
+// QueueInventory queues new inventory to be trickled periodically
+// to the remote peer
 func (sq *sendQueue) QueueInventory(inv []*wire.InvVect) error {
 	if !sq.Running() {
 		return errors.New("Not running.")
@@ -117,6 +121,7 @@ func (sq *sendQueue) QueueInventory(inv []*wire.InvVect) error {
 	}
 }
 
+// Start starts the sendQueue with a new connection.
 func (sq *sendQueue) Start(conn Connection) {
 	// Wait in case the object is resetting.
 	sq.resetWg.Wait()
@@ -134,14 +139,16 @@ func (sq *sendQueue) Start(conn Connection) {
 	go sq.outHandler()
 	go sq.queueHandler(time.NewTicker(sq.trickleTime))
 	go sq.dataRequestHandler()
-	
+
 	atomic.StoreInt32(&sq.stopped, 0)
 }
 
+// Running returns whether the send queue is running.
 func (sq *sendQueue) Running() bool {
 	return atomic.LoadInt32(&sq.started) > 0 && atomic.LoadInt32(&sq.stopped) == 0
 }
 
+// Stop stops the sendQueue.
 func (sq *sendQueue) Stop() {
 	// Already stopping?
 	if atomic.AddInt32(&sq.stopped, 1) != 1 {
@@ -180,7 +187,8 @@ clean2:
 	sq.resetWg.Done()
 }
 
-// Must be run as a go routine.
+// dataRequestHandler handles getData requests without using up too much
+// memory. Must be run as a go routine.
 func (sq *sendQueue) dataRequestHandler() {
 out:
 	for {
@@ -300,8 +308,8 @@ func NewSendQueue(inventory *Inventory, db database.Db) SendQueue {
 		requestQueue:  make(chan []*wire.InvVect, outputBufferSize),
 		quit:          make(chan struct{}),
 		inventory:     inventory,
-		db:            db, 
-		stopped:       1, 
+		db:            db,
+		stopped:       1,
 	}
 }
 

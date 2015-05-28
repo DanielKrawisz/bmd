@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package bmpeer_test
+package peer_test
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monetas/bmd/bmpeer"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"
 )
 
@@ -154,7 +154,7 @@ func NewMockConn(localAddr, remoteAddr net.Addr, closed bool) *MockConn {
 		sendChan:    make(chan []byte),
 		receiveChan: make(chan []byte),
 		done:        make(chan struct{}),
-		closed:      closed, 
+		closed:      closed,
 	}
 }
 
@@ -175,49 +175,49 @@ func TestDial(t *testing.T) {
 	remoteAddr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8333}
 	localAddr := &net.TCPAddr{IP: net.ParseIP("192.168.0.1"), Port: 8333}
 
-	d := bmpeer.TstSwapDial(dialNewMockConn(localAddr, false, false))
-	defer bmpeer.TstSwapDial(d)
+	d := peer.TstSwapDial(dialNewMockConn(localAddr, false, false))
+	defer peer.TstSwapDial(d)
 
-	conn := bmpeer.NewConnection(remoteAddr)
+	conn := peer.NewConnection(remoteAddr)
 	if conn == nil {
 		t.Errorf("No connection returned.")
 	}
-	err := conn.Connect() 
+	err := conn.Connect()
 	if err != nil {
 		t.Errorf("Error %s returned.", err)
 	}
-	err = conn.Connect() 
+	err = conn.Connect()
 	if err == nil {
 		t.Errorf("Expected error for trying to connect twice.")
 	}
 
-	bmpeer.TstSwapDial(dialNewMockConn(localAddr, true, false))
-	conn = bmpeer.NewConnection(remoteAddr)
-	err = conn.Connect() 
+	peer.TstSwapDial(dialNewMockConn(localAddr, true, false))
+	conn = peer.NewConnection(remoteAddr)
+	err = conn.Connect()
 	if err == nil {
 		t.Errorf("Error expected dialing failed connection.")
 	}
 }
 
 // This tests error cases that are returned for connections which have not
-// dialed in to the remote peer yet. 
+// dialed in to the remote peer yet.
 func TestUnconnectedConnection(t *testing.T) {
 	remoteAddr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8333}
 	localAddr := &net.TCPAddr{IP: net.ParseIP("192.168.0.1"), Port: 8333}
 
-	d := bmpeer.TstSwapDial(dialNewMockConn(localAddr, false, false))
-	defer bmpeer.TstSwapDial(d)
+	d := peer.TstSwapDial(dialNewMockConn(localAddr, false, false))
+	defer peer.TstSwapDial(d)
 
-	conn := bmpeer.NewConnection(remoteAddr)
+	conn := peer.NewConnection(remoteAddr)
 	if conn.RemoteAddr() != nil {
 		t.Error("There should be no remote addr before connecting.")
 	}
-	
+
 	msg, err := conn.ReadMessage()
 	if err == nil || msg != nil {
 		t.Error("It should be impossible to read messages before connection is established.")
 	}
-	
+
 	err = conn.WriteMessage(&wire.MsgVerAck{})
 	if err == nil {
 		t.Error("It should be impossible to write messages before connection is established.")
@@ -228,18 +228,18 @@ func TestInterruptedConnection(t *testing.T) {
 	remoteAddr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8333}
 	localAddr := &net.TCPAddr{IP: net.ParseIP("192.168.0.1"), Port: 8333}
 
-	d := bmpeer.TstSwapDial(dialNewMockConn(localAddr, false, true))
-	defer bmpeer.TstSwapDial(d)
-	
-	conn := bmpeer.NewConnection(remoteAddr)
-	conn.Connect() 
+	d := peer.TstSwapDial(dialNewMockConn(localAddr, false, true))
+	defer peer.TstSwapDial(d)
+
+	conn := peer.NewConnection(remoteAddr)
+	conn.Connect()
 	msg, err := conn.ReadMessage()
 	if err == nil || msg != nil {
 		t.Error("Connection should be closed.")
 	}
-	
-	conn = bmpeer.NewConnection(remoteAddr)
-	conn.Connect() 
+
+	conn = peer.NewConnection(remoteAddr)
+	conn.Connect()
 	err = conn.WriteMessage(&wire.MsgVerAck{})
 	if err == nil {
 		t.Error("Connection should be closed.")

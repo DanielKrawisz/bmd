@@ -1,20 +1,24 @@
-package bmpeer_test
+// Copyright (c) 2015 Monetas.
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package peer_test
 
 import (
 	"testing"
 
-	"github.com/monetas/bmd/bmpeer"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"
 )
 
 func TestNewInventory(t *testing.T) {
-	if bmpeer.NewInventory() == nil {
+	if peer.NewInventory() == nil {
 		t.Error("Nil inventory returned.")
 	}
 }
 
 func TestIsAddKnown(t *testing.T) {
-	inventory := bmpeer.NewInventory()
+	inventory := peer.NewInventory()
 
 	a := &wire.InvVect{Hash: *randomShaHash()}
 
@@ -29,7 +33,7 @@ func TestIsAddKnown(t *testing.T) {
 }
 
 func TestAddDeleteRequest(t *testing.T) {
-	inventory := bmpeer.NewInventory()
+	inventory := peer.NewInventory()
 
 	a := &wire.InvVect{Hash: *randomShaHash()}
 
@@ -44,7 +48,7 @@ func TestAddDeleteRequest(t *testing.T) {
 }
 
 func TestFilterKnown(t *testing.T) {
-	inventory := bmpeer.NewInventory()
+	inventory := peer.NewInventory()
 
 	a := &wire.InvVect{Hash: *randomShaHash()}
 	b := &wire.InvVect{Hash: *randomShaHash()}
@@ -73,7 +77,7 @@ func TestFilterKnown(t *testing.T) {
 }
 
 func TestFilterRequested(t *testing.T) {
-	inventory := bmpeer.NewInventory()
+	inventory := peer.NewInventory()
 
 	a := &wire.InvVect{Hash: *randomShaHash()}
 	b := &wire.InvVect{Hash: *randomShaHash()}

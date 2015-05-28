@@ -2,7 +2,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package bmpeer_test
+package peer_test
 
 import (
 	"errors"
@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/monetas/bmd/bmpeer"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"
 )
 
@@ -72,7 +72,7 @@ func TestConnectionAndListener(t *testing.T) {
 
 	incoming := make(chan net.Conn)
 
-	listener := bmpeer.TstNewListener(&MockListener{
+	listener := peer.TstNewListener(&MockListener{
 		incoming:   incoming,
 		disconnect: make(chan struct{}),
 		localAddr:  localAddr,
@@ -110,7 +110,7 @@ func TestConnectionAndListener(t *testing.T) {
 
 		msg, err := mc.ReadMessage()
 		if err != nil {
-			t.Errorf("Error returned reading message.")
+			t.Fatalf("Error returned reading message.")
 		}
 
 		hashtest := wire.MessageHash(msg)
@@ -178,10 +178,10 @@ func TestConnectionAndListener(t *testing.T) {
 func TestListen(t *testing.T) {
 	localAddr := &net.TCPAddr{IP: net.ParseIP("192.168.0.1"), Port: 8333}
 
-	l := bmpeer.TstSwapListen(startNewMockListener(localAddr, make(chan net.Conn), make(chan struct{})))
-	defer bmpeer.TstSwapListen(l)
+	l := peer.TstSwapListen(startNewMockListener(localAddr, make(chan net.Conn), make(chan struct{})))
+	defer peer.TstSwapListen(l)
 
-	listen, err := bmpeer.Listen("tcp4", "8445")
+	listen, err := peer.Listen("tcp4", "8445")
 	if listen == nil {
 		t.Errorf("No connection returned.")
 	}
@@ -189,7 +189,7 @@ func TestListen(t *testing.T) {
 		t.Errorf("Error %s returned.", err)
 	}
 
-	listen, err = bmpeer.Listen("tcp4", "8445")
+	listen, err = peer.Listen("tcp4", "8445")
 	if listen != nil {
 		t.Errorf("Connection returned when it should have failed.")
 	}

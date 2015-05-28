@@ -31,41 +31,38 @@ const (
 
 // newPeerMsg signifies a newly connected peer to the object manager.
 type newPeerMsg struct {
-	peer *peer
+	peer *bmpeer
 }
 
 // objectMsg packages a bitmessage object message and the peer it came from
 // together so the object manager has access to that information.
 type objectMsg struct {
 	object wire.Message
-	peer   *peer
+	peer   *bmpeer
 }
 
 // invMsg packages a bitmessage inv message and the peer it came from together
 // so the object manager has access to that information.
 type invMsg struct {
 	inv  *wire.MsgInv
-	peer *peer
+	peer *bmpeer
 }
 
 // donePeerMsg signifies a newly disconnected peer to the object manager.
 type donePeerMsg struct {
-	peer *peer
+	peer *bmpeer
 }
 
 // peerRequest represents the peer from which an object was requested along with
 // the timestamp.
 type peerRequest struct {
-	peer      *peer
+	peer      *bmpeer
 	timestamp time.Time
 }
 
-// What objects do we know about but don't have?
-// Who has them?
-// Which have been requested and of whom?
-// objectManager provides a concurrency safe object manager for handling all
-// incoming objects.
-type objectManager struct {
+// ObjectManager provides a concurrency safe object manager for handling all
+// incoming and outgoing.
+type ObjectManager struct {
 	server           *server
 	started          int32
 	shutdown         int32
@@ -78,7 +75,7 @@ type objectManager struct {
 // handleNewPeerMsg deals with new peers that have signalled they may
 // be considered as a sync peer (they have already successfully negotiated). It
 // is invoked from the syncHandler goroutine.
-func (om *objectManager) handleNewPeerMsg(peers map[*peer]struct{}, p *peer) {
+func (om *ObjectManager) handleNewPeerMsg(peers map[*bmpeer]struct{}, p *bmpeer) {
 	// Ignore if in the process of shutting down.
 	if atomic.LoadInt32(&om.shutdown) != 0 {
 		return
@@ -90,7 +87,7 @@ func (om *objectManager) handleNewPeerMsg(peers map[*peer]struct{}, p *peer) {
 
 // handleDonePeerMsg deals with peers that have signalled they are done. It is
 // invoked from the syncHandler goroutine.
-func (om *objectManager) handleDonePeerMsg(peers map[*peer]struct{}, p *peer) {
+func (om *ObjectManager) handleDonePeerMsg(peers map[*bmpeer]struct{}, p *bmpeer) {
 	// Remove the peer from the list of candidate peers.
 	delete(peers, p)
 
@@ -104,7 +101,7 @@ func (om *objectManager) handleDonePeerMsg(peers map[*peer]struct{}, p *peer) {
 }
 
 // handleObjectMsg handles object messages from all peers.
-func (om *objectManager) handleObjectMsg(omsg *objectMsg) {
+func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 	invHash := wire.MessageHash(omsg.object)
 	invVect := wire.NewInvVect(invHash)
 
@@ -115,7 +112,7 @@ func (om *objectManager) handleObjectMsg(omsg *objectMsg) {
 		// thus disconnecting legitimate peers. We want to prevent against such
 		// an attack by checking that objects came from peers that we requested
 		// from.
-		omsg.peer.Disconnect()
+		omsg.peer.disconnect()
 		return
 	}
 
@@ -133,17 +130,17 @@ func (om *objectManager) handleObjectMsg(omsg *objectMsg) {
 // haveInventory returns whether or not the inventory represented by the passed
 // inventory vector is known. This includes checking all of the various places
 // inventory can be.
-func (om *objectManager) haveInventory(invVect *wire.InvVect) (bool, error) {
+func (om *ObjectManager) haveInventory(invVect *wire.InvVect) (bool, error) {
 	return om.server.db.ExistsObject(&invVect.Hash)
 }
 
 // handleInvMsg handles inv messages from all peers.
 // We examine the inventory advertised by the remote peer and act accordingly.
-func (om *objectManager) handleInvMsg(imsg *invMsg) {
+func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 	requestQueue := make([]*wire.InvVect, len(imsg.inv.InvList))
 
 	// Request the advertised inventory if we don't already have it.
-	var i int = 0
+	var i int
 
 	for _, iv := range imsg.inv.InvList {
 		// Add inv to known inventory.
@@ -179,11 +176,11 @@ func (om *objectManager) handleInvMsg(imsg *invMsg) {
 // hash but does not send the object. This would effectively 'censor' the object
 // from the peer. To avoid this scenario, we need to record the timestamp of a
 // request and set it to timeout within the set duration.
-func (om *objectManager) clearRequests() {
+func (om *ObjectManager) clearRequests() {
 	for _, p := range om.requestedObjects {
 		// if request has expired
 		if p.timestamp.Add(objectRequestTimeout).After(time.Now()) {
-			p.peer.Disconnect() // we're done with this malicious peer
+			p.peer.disconnect() // we're done with this malicious peer
 			om.DonePeer(p.peer)
 		}
 	}
@@ -192,8 +189,8 @@ func (om *objectManager) clearRequests() {
 // objectHandler is the main handler for the object manager. It must be run as a
 // goroutine. It processes inv messages in a separate goroutine from the peer
 // handlers.
-func (om *objectManager) objectHandler() {
-	candidatePeers := make(map[*peer]struct{})
+func (om *ObjectManager) objectHandler() {
+	candidatePeers := make(map[*bmpeer]struct{})
 	clearTick := time.NewTicker(objectRequestTimeout / 2)
 
 	for {
@@ -225,7 +222,7 @@ func (om *objectManager) objectHandler() {
 }
 
 // NewPeer informs the object manager of a newly active peer.
-func (om *objectManager) NewPeer(p *peer) {
+func (om *ObjectManager) NewPeer(p *bmpeer) {
 	// Ignore if we are shutting down.
 	if atomic.LoadInt32(&om.shutdown) != 0 {
 		return
@@ -236,7 +233,7 @@ func (om *objectManager) NewPeer(p *peer) {
 
 // QueueObject adds the passed object message and peer to the object handling
 // queue.
-func (om *objectManager) QueueObject(object wire.Message, p *peer) {
+func (om *ObjectManager) QueueObject(object wire.Message, p *bmpeer) {
 	// Don't accept more objects if we're shutting down.
 	if atomic.LoadInt32(&om.shutdown) != 0 {
 		return
@@ -246,7 +243,7 @@ func (om *objectManager) QueueObject(object wire.Message, p *peer) {
 }
 
 // QueueInv adds the passed inv message and peer to the object handling queue.
-func (om *objectManager) QueueInv(inv *wire.MsgInv, p *peer) {
+func (om *ObjectManager) QueueInv(inv *wire.MsgInv, p *bmpeer) {
 	// Ignore if we are shutting down.
 	if atomic.LoadInt32(&om.shutdown) != 0 {
 		return
@@ -256,7 +253,7 @@ func (om *objectManager) QueueInv(inv *wire.MsgInv, p *peer) {
 }
 
 // DonePeer informs the object manager that a peer has disconnected.
-func (om *objectManager) DonePeer(p *peer) {
+func (om *ObjectManager) DonePeer(p *bmpeer) {
 	// Ignore if we are shutting down.
 	if atomic.LoadInt32(&om.shutdown) != 0 {
 		return
@@ -266,7 +263,7 @@ func (om *objectManager) DonePeer(p *peer) {
 }
 
 // Start begins the core object handler which processes object messages.
-func (om *objectManager) Start() {
+func (om *ObjectManager) Start() {
 	// Already started?
 	if atomic.AddInt32(&om.started, 1) != 1 {
 		return
@@ -278,7 +275,7 @@ func (om *objectManager) Start() {
 
 // Stop gracefully shuts down the object manager by stopping all asynchronous
 // handlers and waiting for them to finish.
-func (om *objectManager) Stop() error {
+func (om *ObjectManager) Stop() error {
 	if atomic.AddInt32(&om.shutdown, 1) != 1 {
 		return nil
 	}
@@ -290,8 +287,8 @@ func (om *objectManager) Stop() error {
 
 // newObjectManager returns a new bitmessage object manager. Use Start to begin
 // processing objects and inv messages asynchronously.
-func newObjectManager(s *server) *objectManager {
-	return &objectManager{
+func newObjectManager(s *server) *ObjectManager {
+	return &ObjectManager{
 		server:           s,
 		requestedObjects: make(map[wire.InvVect]*peerRequest),
 		msgChan:          make(chan interface{}, objectManagerQueueSize),

@@ -1,10 +1,17 @@
-package bmpeer
+// Originally derived from: btcsuite/btcd/peer.go
+// Copyright (c) 2013-2015 Conformal Systems LLC.
+
+// Copyright (c) 2015 Monetas.
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package peer
 
 import (
-	"sync/atomic"
-	"time"
 	"errors"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/monetas/bmutil/wire"
 )
@@ -30,13 +37,13 @@ const (
 	negotiateTimeoutSeconds = 30
 
 	// idleTimeoutMinutes is the number of minutes of inactivity before
-	// we time out a peer.
-	idleTimeoutMinutes = 5
+	// we time out a peer. Must be > 5 because that is the time interval
+	// at which pongs are sent.
+	idleTimeoutMinutes = 6
 
 	// pingTimeoutMinutes is the number of minutes since we last sent a
 	// message requiring a reply before we will ping a host.
-	// TODO implement this rule.
-	//pingTimeoutMinutes = 2
+	pingTimeoutMinutes = 5
 )
 
 // Peer is the part of a bitmessage peer that handles the incoming connection
@@ -48,17 +55,11 @@ type Peer struct {
 	conn      Connection
 
 	started    int32
+	starting   int32
 	disconnect int32 // only to be used atomically
-	lock       sync.Mutex
+	resetWg    sync.WaitGroup
 
 	quit chan struct{}
-	
-	Persistent bool
-	RetryCount int64
-}
-
-func (p *Peer) Logic() Logic {
-	return p.logic
 }
 
 // Connected returns whether or not the peer is currently connected.
@@ -71,24 +72,24 @@ func (p *Peer) Connected() bool {
 // Disconnect disconnects the peer by closing the connection. It also sets
 // a flag so the impending shutdown can be detected.
 func (p *Peer) Disconnect() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+	//p.lock.Lock()
+	//defer p.lock.Unlock()
+	p.resetWg.Wait()
 
 	// Don't stop if we're not running.
 	if atomic.LoadInt32(&p.started) == 0 {
 		return
 	}
-	
+
 	// Already stopping? (shouldn't happen at all anymore.)
 	if atomic.AddInt32(&p.disconnect, 1) != 1 {
 		return
 	}
 
-	close(p.quit)
-
 	if p.conn.Connected() {
 		p.conn.Close()
 	}
+	p.logic.Stop()
 
 	atomic.StoreInt32(&p.started, 0)
 	atomic.StoreInt32(&p.disconnect, 0)
@@ -97,14 +98,10 @@ func (p *Peer) Disconnect() {
 // Start begins processing input and output messages. It also sends the initial
 // version message for outbound connections to start the negotiation process.
 func (p *Peer) Start() error {
-	p.lock.Lock()
-	defer p.lock.Unlock()
-
-	// Already started?
 	if atomic.AddInt32(&p.started, 1) != 1 {
 		return nil
 	}
-	
+
 	if !p.conn.Connected() {
 		err := p.Connect()
 		if err != nil {
@@ -112,35 +109,30 @@ func (p *Peer) Start() error {
 			return err
 		}
 	}
-	
-	p.quit = make(chan struct{})
 
 	p.sendQueue.Start(p.conn)
 
-	// Send initial version message if necessary. 
-	if !p.logic.Inbound() {
-		p.logic.PushVersionMsg()
-	}
-
 	// Start processing input and output.
-	go p.inHandler(negotiateTimeoutSeconds, idleTimeoutMinutes)
+	go p.inHandler(negotiateTimeoutSeconds, idleTimeoutMinutes)	
 	return nil
 }
 
+// Connect connects the peer object to the remote peer if it is not already
+// connected.
 func (p *Peer) Connect() error {
 	if p.conn.Connected() {
 		return nil
 	}
-	
+
 	if atomic.LoadInt32(&p.disconnect) != 0 {
 		return errors.New("Disconnection in progress.")
 	}
-	
+
 	err := p.conn.Connect()
 	if err != nil {
-		return err 
+		return err
 	}
-	
+
 	return nil
 }
 
@@ -153,6 +145,7 @@ func (p *Peer) inHandler(handshakeTimeoutSeconds, idleTimeoutMinutes uint) {
 	idleTimer := time.AfterFunc(time.Duration(handshakeTimeoutSeconds)*time.Second, func() {
 		p.Disconnect()
 	})
+
 out:
 	for atomic.LoadInt32(&p.disconnect) == 0 {
 		rmsg, err := p.conn.ReadMessage()
@@ -183,11 +176,15 @@ out:
 			markConnected = true
 
 		case *wire.MsgGetData:
-			err = p.sendQueue.QueueDataRequest((rmsg.(*wire.MsgGetData)).InvList)
+			err = p.logic.HandleGetDataMsg(msg)
+			//err = p.sendQueue.QueueDataRequest((rmsg.(*wire.MsgGetData)).InvList)
 			markConnected = true
 
 		case *wire.MsgGetPubKey, *wire.MsgPubKey, *wire.MsgMsg, *wire.MsgBroadcast, *wire.MsgUnknownObject:
 			err = p.logic.HandleObjectMsg(rmsg)
+			markConnected = true
+
+		case *wire.MsgPong:
 			markConnected = true
 		}
 
@@ -195,22 +192,8 @@ out:
 			break out
 		}
 		if markConnected == true { // XXX to make it compile
-
+			idleTimer.Reset(time.Duration(idleTimeoutMinutes) * time.Minute)
 		}
-
-		// TODO
-		// Mark the address as currently connected and working as of
-		// now if one of the messages that trigger it was processed.
-		//		if markConnected && atomic.LoadInt32(&p.disconnect) == 0 {
-		//			if p.na == nil {
-		//				continue
-		//			}
-		//			p.server.addrManager.Connected(p.na)
-		//		}
-		// ok we got a message, reset the timer.
-		// timer just calls p.Disconnect() after logging.
-		
-		idleTimer.Reset(time.Duration(idleTimeoutMinutes) * time.Minute)
 	}
 
 	idleTimer.Stop()
@@ -218,23 +201,13 @@ out:
 	// Ensure connection is closed and notify the server that the peer is
 	// done.
 	p.Disconnect()
-
-	//TODO
-	// Only tell block manager we are gone if we ever told it we existed.
-	//if p.HandshakeComplete() {
-	//	p.server.objectManager.DonePeer(p)
-	//}
-
-	//p.server.donePeers <- p
 }
 
 // NewPeer returns a new Peer object.
-func NewPeer(logic Logic, conn Connection, sendQueue SendQueue, persistent bool, retrys int64) *Peer {
+func NewPeer(logic Logic, conn Connection, sendQueue SendQueue) *Peer {
 	return &Peer{
-		logic:         logic,
-		sendQueue:     sendQueue,
-		conn:          conn,
-		Persistent:    persistent,
-		RetryCount:    retrys, 
+		logic:     logic,
+		sendQueue: sendQueue,
+		conn:      conn,
 	}
 }

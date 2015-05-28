@@ -1,10 +1,14 @@
-package bmpeer_test
+// Copyright (c) 2015 Monetas.
+// Use of this source code is governed by an ISC
+// license that can be found in the LICENSE file.
+
+package peer_test
 
 import (
 	"testing"
 	"math/rand"
 
-	"github.com/monetas/bmd/bmpeer"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"
 )
 
@@ -18,7 +22,7 @@ func randomShaHash() *wire.ShaHash {
 }
 
 func TestNew(t *testing.T) {
-	if bmpeer.NewMruInventoryMap(2) == nil {
+	if peer.NewMruInventoryMap(2) == nil {
 		t.Error("Should have returned an inv map.")
 	}
 }
@@ -29,7 +33,7 @@ func TestString(t *testing.T) {
 	a := &wire.InvVect{Hash: *hasha}
 	b := &wire.InvVect{Hash: *hashb}
 
-	m := bmpeer.NewMruInventoryMap(2)
+	m := peer.NewMruInventoryMap(2)
 	m.Add(a)
 	m.Add(b)
 
@@ -49,7 +53,7 @@ func TestMruInvMap(t *testing.T) {
 	b := &wire.InvVect{Hash: *randomShaHash()}
 	c := &wire.InvVect{Hash: *randomShaHash()}
 
-	m := bmpeer.NewMruInventoryMap(2)
+	m := peer.NewMruInventoryMap(2)
 
 	if m.Exists(a) {
 		t.Error("Map should be empty.")
@@ -85,7 +89,7 @@ func TestMruInvMap(t *testing.T) {
 func TestAdd0(t *testing.T) {
 	a := &wire.InvVect{Hash: *randomShaHash()}
 
-	m := bmpeer.NewMruInventoryMap(0)
+	m := peer.NewMruInventoryMap(0)
 	if m.Exists(a) {
 		t.Error("Map should be empty.")
 	}
@@ -101,7 +105,7 @@ func TestFilter(t *testing.T) {
 	b := &wire.InvVect{Hash: *randomShaHash()}
 	c := &wire.InvVect{Hash: *randomShaHash()}
 
-	m := bmpeer.NewMruInventoryMap(3)
+	m := peer.NewMruInventoryMap(3)
 	m.Add(a)
 
 	ret := m.Filter([]*wire.InvVect{a, b, c})

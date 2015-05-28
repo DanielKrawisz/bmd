@@ -2,10 +2,13 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package bmpeer
+package peer
 
 import (
 	"net"
+	"time"
+
+	"github.com/monetas/bmutil/wire"
 )
 
 // Listener represents an open port listening for bitmessage connections.
@@ -30,10 +33,18 @@ func (pl *listener) Accept() (Connection, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &connection{
-		conn: conn,
-		addr: conn.RemoteAddr(),
-	}, nil
+
+	connection := &connection{
+		conn:        conn,
+		addr:        conn.RemoteAddr(),
+		idleTimeout: time.Minute * pingTimeoutMinutes,
+	}
+
+	connection.idleTimer = time.AfterFunc(connection.idleTimeout, func() {
+		connection.WriteMessage(&wire.MsgPong{})
+	})
+
+	return connection, nil
 }
 
 // Close closes the listener.
