@@ -113,7 +113,7 @@ func (p *Peer) Start() error {
 	p.sendQueue.Start(p.conn)
 
 	// Start processing input and output.
-	go p.inHandler(negotiateTimeoutSeconds, idleTimeoutMinutes)	
+	go p.inHandler(negotiateTimeoutSeconds, idleTimeoutMinutes)
 	return nil
 }
 

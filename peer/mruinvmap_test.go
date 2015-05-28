@@ -5,8 +5,8 @@
 package peer_test
 
 import (
-	"testing"
 	"math/rand"
+	"testing"
 
 	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"

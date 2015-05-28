@@ -5,8 +5,8 @@
 package main
 
 import (
-	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmd/database"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"
 )
 
@@ -23,8 +23,8 @@ func TstNewServer(listenAddrs []string, db database.Db, listen func(string, stri
 
 // TstNewPeerHandshakeComplete creates a new peer object that has already nearly
 // completed its initial handshake. You just need to send it a ver ack and it will
-// run as if that was the last step necessary. It comes already running. 
-func TstNewPeerHandshakeComplete(s *server, conn peer.Connection, inventory *peer.Inventory, sq peer.SendQueue, na *wire.NetAddress) *bmpeer{
+// run as if that was the last step necessary. It comes already running.
+func TstNewPeerHandshakeComplete(s *server, conn peer.Connection, inventory *peer.Inventory, sq peer.SendQueue, na *wire.NetAddress) *bmpeer {
 	logic := &bmpeer{
 		server:          s,
 		protocolVersion: maxProtocolVersion,
@@ -39,10 +39,10 @@ func TstNewPeerHandshakeComplete(s *server, conn peer.Connection, inventory *pee
 		userAgent:       wire.DefaultUserAgent,
 		na:              na,
 	}
-	
-	p := peer.NewPeer(logic, conn, sq) 
+
+	p := peer.NewPeer(logic, conn, sq)
 
 	logic.peer = p
-	
+
 	return logic
 }

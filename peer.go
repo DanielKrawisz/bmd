@@ -38,7 +38,7 @@ var (
 	userAgentVersion = fmt.Sprintf("%d.%d.%d", 0, 0, 1)
 )
 
-// peer implements peer.Logic and provides for the handling of messages 
+// peer implements peer.Logic and provides for the handling of messages
 // from a bitmessage peer. For inbound data-related messages such as
 // objects and inventory, the data is passed on to the object
 // manager to handle it. Outbound messages are queued via a SendQueue object.

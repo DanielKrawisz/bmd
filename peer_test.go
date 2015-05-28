@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
+	"sync/atomic"
 	"testing"
 	"time"
-	"sync/atomic"
 
-	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmd/database"
 	_ "github.com/monetas/bmd/database/memdb"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil"
 	"github.com/monetas/bmutil/pow"
 	"github.com/monetas/bmutil/wire"
@@ -456,7 +456,7 @@ type MockConnection struct {
 	remoteAddr net.Addr
 
 	// Whether the report has already been submitted.
-	reported    int32
+	reported int32
 }
 
 func (mock *MockConnection) ReadMessage() (wire.Message, error) {
@@ -978,7 +978,7 @@ func oTestInboundPeerHandshake(t *testing.T) {
 	}
 
 	for testCase, open := range openingMsg {
-		
+
 		// Create server and start it.
 		listeners := []string{net.JoinHostPort("", "8445")}
 		var err error
@@ -1073,7 +1073,7 @@ func oTestProcessAddr(t *testing.T) {
 	}
 
 	for testCase, addrTest := range AddrTests {
-	
+
 		// Add some addresses to the address manager.
 		addrs := make([]*wire.NetAddress, addrTest.NumAddrs)
 
@@ -1276,7 +1276,7 @@ func TestProcessInvAndObjectExchange(t *testing.T) {
 		if err != nil {
 			t.Fatal("Server failed to start.")
 		}
-		
+
 		serv.TstStart([]*DefaultPeer{})
 
 		mockConn := NewMockConnection(localAddr, remoteAddr, report,

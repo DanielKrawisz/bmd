@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"github.com/monetas/bmd/addrmgr"
-	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmd/database"
+	"github.com/monetas/bmd/peer"
 	"github.com/monetas/bmutil/wire"
 )
 

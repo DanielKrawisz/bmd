@@ -21,7 +21,7 @@ import (
 // MockConnection implements the Connection interface and is used to test
 // sendQueue without connecting to the real internet.
 type MockConnection struct {
-	closed      bool // Whether the connection has been closed. 
+	closed      bool // Whether the connection has been closed.
 	connected   bool // Whether the connection is connected.
 	failure     bool // When this is true, sending or receiving messages returns an error.
 	connectFail bool // When this is true, the connection cannot connect.
@@ -69,9 +69,9 @@ func (mock *MockConnection) ReadMessage() (wire.Message, error) {
 	}
 
 	select {
-	case msg := <-mock.send :
+	case msg := <-mock.send:
 		return msg, nil
-	case <-mock.failChan :
+	case <-mock.failChan:
 		return nil, errors.New("Mock Connection set to fail.")
 	}
 }
@@ -145,11 +145,11 @@ func (mock *MockConnection) SetFailure(b bool) {
 		case <-mock.done:
 		default:
 		}
-		
-		// Close the failure channel to ensure any messages being read 
+
+		// Close the failure channel to ensure any messages being read
 		// will return an error.
 		close(mock.failChan)
-		
+
 	} else {
 		mock.failChan = make(chan struct{})
 	}
@@ -160,9 +160,9 @@ func NewMockConnection(connected bool, fails bool) *MockConnection {
 		done:        make(chan struct{}),
 		reply:       make(chan wire.Message),
 		send:        make(chan wire.Message),
-		failChan:    make(chan struct{}), 
-		connected:   connected, 
-		connectFail: fails, 
+		failChan:    make(chan struct{}),
+		connected:   connected,
+		connectFail: fails,
 	}
 }
 
@@ -287,32 +287,32 @@ func TestSendQueueStartStop(t *testing.T) {
 	if queue.Running() {
 		t.Errorf("queue should not be running anymore. ")
 	}
-	
-	// Test the case in which Start and Stop end prematurely because they 
-	// are being called by another go routine. 
+
+	// Test the case in which Start and Stop end prematurely because they
+	// are being called by another go routine.
 	waitChan := make(chan struct{})
 	startChan := make(chan struct{})
 	stopChan := make(chan struct{})
-	go func () {
+	go func() {
 		peer.TstSendQueueStartWait(queue, conn, waitChan, startChan)
 		stopChan <- struct{}{}
-	} ()
-	// Make sure the queue is definitely in the middle of starting. 
+	}()
+	// Make sure the queue is definitely in the middle of starting.
 	<-startChan
-	queue.Start(conn) 
+	queue.Start(conn)
 	waitChan <- struct{}{}
 	<-stopChan
 	if !queue.Running() {
 		t.Errorf("queue should be running after being started twice. ")
 	}
-	
-	go func () {
+
+	go func() {
 		peer.TstSendQueueStopWait(queue, waitChan, startChan)
 		stopChan <- struct{}{}
-	} ()
-	// Make sure the queue is in the process of stopping already. 
+	}()
+	// Make sure the queue is in the process of stopping already.
 	<-startChan
-	queue.Stop() 
+	queue.Stop()
 	waitChan <- struct{}{}
 	<-stopChan
 	if queue.Running() {
@@ -645,11 +645,11 @@ func TestQueueInv(t *testing.T) {
 
 	queue.Stop()
 	close(reset)
-	
+
 	// Finally, test the line that drains invSendQueue if the program disconnects.
 	peer.TstSendQueueStart(queue, conn)
 	peer.TstSendQueueStartQueueHandler(queue, ticker)
-	
+
 	for i = 0; i < 6; i++ {
 		invTrickleSize := 1200
 		invList := make([]*wire.InvVect, invTrickleSize)
@@ -661,9 +661,9 @@ func TestQueueInv(t *testing.T) {
 	// Give the queue handler some time to run.
 	time.Sleep(time.Millisecond * 50)
 	queue.Stop()
-	
+
 	// Start and stop again to make sure the test doesn't end before the queue
-	// has shut down the last time. 
+	// has shut down the last time.
 	peer.TstSendQueueStart(queue, conn)
 	queue.Stop()
 }
