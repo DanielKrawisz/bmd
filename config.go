@@ -37,8 +37,8 @@ const (
 	defaultDbType         = "memdb"
 	defaultPort           = "8444"
 	defaultRPCPort        = "8442"
-	defaultMaxUpPerPeer   = 2
-	defaultMaxDownPerPeer = 2
+	defaultMaxUpPerPeer   = 1024 * 1024 // 1MBps
+	defaultMaxDownPerPeer = 1024 * 1024
 )
 
 var (
@@ -51,6 +51,53 @@ var (
 	defaultLogDir      = filepath.Join(bmdHomeDir, defaultLogDirname)
 )
 
+// Filesize is a custom configuration option for go-flags. It is used to parse
+// common filesize appendages like B, K, M, G which mean bytes, kilobytes,
+// megabytes and gigabytes respectively. It stores sizes internally in the form
+// of bytes (int64).
+type Filesize int64
+
+func (size Filesize) MarshalFlag() (string, error) {
+	s := int64(size)
+	if s < 1024 { // B
+		return fmt.Sprintf("%dB", s), nil
+	} else if s < 1024*1024 { // KB
+		return fmt.Sprintf("%.2fK", float64(size)/1024), nil
+	} else if s < 1024*1024*1024 { // MB
+		return fmt.Sprintf("%.2fM", float64(size)/(1024*1024)), nil
+	} else { // GB
+		return fmt.Sprintf("%.2fG", float64(size)/(1024*1024*1024)), nil
+	}
+}
+
+func (size *Filesize) UnmarshalFlag(value string) error {
+	if len(value) < 2 {
+		return errors.New("invalid input")
+	}
+	unit := strings.ToUpper(value[len(value)-1:]) // last letter
+	v := value[:len(value)-1]                     // till last letter
+
+	s, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return err
+	}
+
+	switch unit {
+	case "B": // leave as it is
+	case "K":
+		s *= 1024
+	case "M":
+		s *= 1024 * 1024
+	case "G":
+		s *= 1024 * 1024 * 1024
+	default:
+		return errors.New("unknown unit")
+	}
+
+	*size = Filesize(int64(s))
+	return nil
+}
+
 // config defines the configuration options for bmd.
 //
 // See loadConfig for details on the configuration load process.
@@ -62,9 +109,9 @@ type config struct {
 	AddPeers       []string      `short:"a" long:"addpeer" description:"Add a peer to connect with at startup"`
 	ConnectPeers   []string      `long:"connect" description:"Connect only to the specified peers at startup"`
 	DisableListen  bool          `long:"nolisten" description:"Disable listening for incoming connections -- NOTE: Listening is automatically disabled if the --connect or --proxy options are used without also specifying listen interfaces via --listen"`
-	Listeners      []string      `long:"listen" description:"Add an interface/port to listen for connections (default all interfaces port: 8333, testnet: 18333)"`
+	Listeners      []string      `long:"listen" description:"Add an interface/port to listen for connections (default all interfaces port: 8444)"`
 	MaxPeers       int           `long:"maxpeers" description:"Max number of inbound and outbound peers"`
-	BanDuration    time.Duration `long:"banduration" description:"How long to ban misbehaving peers.  Valid time units are {s, m, h}.  Minimum 1 second"`
+	BanDuration    time.Duration `long:"banduration" description:"How long to ban misbehaving peers. Valid time units are {s, m, h}.  Minimum 1 second"`
 	RPCUser        string        `short:"u" long:"rpcuser" description:"Username for RPC connections"`
 	RPCPass        string        `short:"P" long:"rpcpass" default-mask:"-" description:"Password for RPC connections"`
 	RPCLimitUser   string        `long:"rpclimituser" description:"Username for limited RPC connections"`
@@ -85,13 +132,13 @@ type config struct {
 	OnionProxyPass string        `long:"onionpass" default-mask:"-" description:"Password for onion proxy server"`
 	NoOnion        bool          `long:"noonion" description:"Disable connecting to tor hidden services"`
 	TorIsolation   bool          `long:"torisolation" description:"Enable Tor stream isolation by randomizing user credentials for each connection."`
-	DbType         string        `long:"dbtype" description:"Database backend to use for the Block Chain"`
+	DbType         string        `long:"dbtype" description:"Database backend to use"`
 	Profile        string        `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65536"`
 	CPUProfile     string        `long:"cpuprofile" description:"Write CPU profile to the specified file"`
 	DebugLevel     string        `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 	Upnp           bool          `long:"upnp" description:"Use UPnP to map our listening port outside of NAT"`
-	MaxUpPerPeer   float64       `long:"maxuploadperpeer" description: "Maximum upload rate for any peer."`
-	MaxDownPerPeer float64       `lost:"maxdownloadperpeer" description: "Maximum download rate for any peer."`
+	MaxUpPerPeer   Filesize      `long:"maxupload" description:"Maximum upload rate for any peer. Valid units are {B, K, M, G} bytes/sec."`
+	MaxDownPerPeer Filesize      `long:"maxdownload" description:"Maximum download rate for any peer. Valid units are {B, K, M, G} bytes/sec."`
 	onionlookup    func(string) ([]net.IP, error)
 	lookup         func(string) ([]net.IP, error)
 	oniondial      func(string, string) (net.Conn, error)

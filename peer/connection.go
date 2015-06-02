@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/monetas/bmutil/wire"
 	"github.com/DanielKrawisz/maxrate"
+	"github.com/monetas/bmutil/wire"
 )
 
 // Connection is a bitmessage connection that abstracts the underlying tcp
@@ -70,7 +70,7 @@ func (pc *connection) WriteMessage(msg wire.Message) error {
 		return err
 	}
 
-	pc.maxDown.Transfer(float64(n))
+	pc.maxUp.Transfer(float64(n))
 
 	return nil
 }
@@ -93,8 +93,8 @@ func (pc *connection) ReadMessage() (wire.Message, error) {
 		pc.conn = nil
 		return nil, err
 	}
-	
-	pc.maxUp.Transfer(float64(n))
+
+	pc.maxDown.Transfer(float64(n))
 
 	pc.idleTimer.Reset(pc.idleTimeout)
 
@@ -173,14 +173,12 @@ func (pc *connection) Connect() error {
 }
 
 // NewConnection creates a new *connection.
-func NewConnection(addr net.Addr, maxDown, maxUp float64) Connection {
+func NewConnection(addr net.Addr, maxDown, maxUp int64) Connection {
 	pc := &connection{
 		addr:        addr,
 		idleTimeout: time.Minute * pingTimeoutMinutes,
-		// The average upload rate over the past minute
-		// may not be more than 2 mb. 
-		maxDown:     maxrate.New(maxDown*float64(1048576), 1),
-		maxUp:       maxrate.New(maxUp*float64(1048576), 1), 
+		maxDown:     maxrate.New(float64(maxDown), 1),
+		maxUp:       maxrate.New(float64(maxUp), 1),
 	}
 
 	pc.idleTimer = time.AfterFunc(pc.idleTimeout, func() {

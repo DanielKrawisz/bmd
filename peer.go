@@ -514,7 +514,7 @@ func newOutboundPeer(addr string, s *server, stream uint32, persistent bool, ret
 	}
 
 	tcpAddr := &net.TCPAddr{IP: net.ParseIP(host), Port: int(port)}
-	conn := NewConn(tcpAddr, cfg.MaxDownPerPeer, cfg.MaxUpPerPeer)
+	conn := NewConn(tcpAddr, int64(cfg.MaxDownPerPeer), int64(cfg.MaxUpPerPeer))
 	inventory := peer.NewInventory()
 	sq := peer.NewSend(inventory, s.db)
 	logic := newPeerBase(tcpAddr, s, inventory, sq, false, persistent, retryCount)
