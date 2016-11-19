@@ -6,13 +6,15 @@
 package peer
 
 import (
+	"errors"
 	"net"
 	"sync/atomic"
 	"time"
 
-	"github.com/DanielKrawisz/maxrate"
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
+	"github.com/DanielKrawisz/maxrate"
 )
 
 // TstNewConnection is used to create a new connection with a mock conn instead
@@ -52,8 +54,12 @@ func TstSwapListen(f func(string, string) (net.Listener, error)) func(string, st
 }
 
 // TstRetrieveObject exposes retrieveObject for testing purposes.
-func TstRetrieveObject(db database.Db, inv *wire.InvVect) *wire.MsgObject {
-	return retrieveObject(db, inv)
+func TstRetrieveObject(db database.Db, inv *wire.InvVect) (obj.Object, error) {
+	obj := retrieveObject(db, inv)
+	if obj == nil {
+		return nil, errors.New("retrieve object came out nil.")
+	}
+	return obj, nil
 }
 
 // tstStart is a special way to start the Send without starting the queue

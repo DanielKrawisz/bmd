@@ -9,8 +9,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/DanielKrawisz/maxrate"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/maxrate"
 )
 
 // Listener represents an open port listening for bitmessage connections.

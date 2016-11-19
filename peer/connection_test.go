@@ -10,9 +10,9 @@ import (
 	"net"
 	"testing"
 
-	"github.com/DanielKrawisz/mocknet"
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/mocknet"
 )
 
 // MockWrite is for the mock peer to write a message that will be read by

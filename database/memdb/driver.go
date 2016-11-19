@@ -11,8 +11,8 @@ package memdb
 import (
 	"fmt"
 
-	"github.com/btcsuite/btclog"
 	"github.com/DanielKrawisz/bmd/database"
+	"github.com/btcsuite/btclog"
 )
 
 var log = btclog.Disabled

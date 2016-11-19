@@ -35,7 +35,7 @@ var (
 )
 
 // bmdMain is the real main function for bmd. It is necessary to work around
-// the fact that deferred functions do not run when os.Exit() is called. 
+// the fact that deferred functions do not run when os.Exit() is called.
 func bmdMain() error {
 
 	// Load configuration.

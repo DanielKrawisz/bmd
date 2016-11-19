@@ -19,12 +19,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcutil"
-	"github.com/btcsuite/go-socks/socks"
-	flags "github.com/jessevdk/go-flags"
 	"github.com/DanielKrawisz/bmd/database"
 	_ "github.com/DanielKrawisz/bmd/database/bdb"
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
+	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/go-socks/socks"
+	flags "github.com/jessevdk/go-flags"
 )
 
 const (
@@ -36,8 +36,8 @@ const (
 	defaultBanDuration     = time.Hour * 24
 	defaultMaxRPCClients   = 25
 	defaultDbType          = "boltdb"
-	defaultPort            = 8444 // 8444
-	defaultRPCPort         = 8442 
+	defaultPort            = 8444
+	defaultRPCPort         = 8442
 	defaultMaxUpPerPeer    = 2 * 1024 * 1024 // 2MBps
 	defaultMaxDownPerPeer  = 2 * 1024 * 1024 // 2MBps
 	defaultMaxOutbound     = 10
@@ -370,10 +370,10 @@ func newConfigParser(cfg *config, appName string, options flags.Options) *flags.
 // while still allowing the user to override settings with config files and
 // command line options. Command line options always take precedence.
 func loadConfig() (*config, []string, error) {
-	
+
 	appName := filepath.Base(os.Args[0])
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
-	
+
 	return LoadConfig(appName, os.Args[1:])
 }
 
@@ -424,7 +424,7 @@ func LoadConfig(appName string, args []string) (*config, []string, error) {
 	parser := newConfigParser(&cfg, appName, flags.Default)
 	// If the default location is specified, then the file isn't required to exist.
 	if preCfg.ConfigFile != defaultConfigFile || fileExists(preCfg.ConfigFile) {
-		
+
 		err = flags.NewIniParser(parser).ParseFile(preCfg.ConfigFile)
 
 		if err != nil {
@@ -530,8 +530,8 @@ func LoadConfig(appName string, args []string) (*config, []string, error) {
 		fmt.Fprintln(os.Stderr, usageMessage)
 		return nil, nil, err
 	}
-	
-	// Attach the default initial nodes. 
+
+	// Attach the default initial nodes.
 	cfg.AddPeers = append(cfg.AddPeers, defaultInitialNodes...)
 
 	// --proxy or --connect without --listen disables listening.

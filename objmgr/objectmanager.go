@@ -183,8 +183,7 @@ func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 	delete(om.requested, *invVect)
 
 	// Check PoW.
-	if !pow.Check(omsg.object, pow.DefaultExtraBytes,
-		pow.DefaultNonceTrialsPerByte, time.Now()) {
+	if !omsg.object.CheckPow(pow.DefaultData, time.Now()) {
 		return // invalid PoW
 	}
 
@@ -206,7 +205,7 @@ func (om *ObjectManager) HandleInsert(obj *wire.MsgObject) uint64 {
 	}
 
 	// Notify RPC server
-	om.server.NotifyObject(obj.ObjectType)
+	om.server.NotifyObject(obj.Header().ObjectType)
 
 	// Advertise objects to other peers.
 	om.relayInvList.PushBack(invVect)
@@ -229,9 +228,6 @@ func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 	// Request the advertised inventory if we don't already have it.
 	numInvs := 0
 	for _, iv := range imsg.inv.InvList {
-		// Add inv to known inventory.
-		imsg.peer.Inventory.AddKnown(iv)
-
 		haveInv, err := om.HaveInventory(iv)
 		if err != nil || haveInv {
 			continue

@@ -18,6 +18,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 // testContext is used to store context information about a running test which
@@ -84,50 +85,38 @@ var ripehash = []wire.RipeHash{
 }
 
 // Some bitmessage objects that we use for testing. Two of each.
-var testObj = [][]wire.Message{
-	[]wire.Message{
-		wire.NewMsgGetPubKey(654, expires, 4, 1, &ripehash[0], &shahash[0]),
-		wire.NewMsgGetPubKey(654, expired, 4, 1, &ripehash[1], &shahash[1]),
+var testObj = [][]obj.Object{
+	[]obj.Object{
+		obj.NewGetPubKey(654, expires, 4, 1, &ripehash[0], &shahash[0]),
+		obj.NewGetPubKey(654, expired, 4, 1, &ripehash[1], &shahash[1]),
 	},
-	[]wire.Message{
-		wire.NewMsgPubKey(543, expires, 4, 1, 2, &pubkey[0], &pubkey[1], 3, 5,
-			[]byte{4, 5, 6, 7, 8, 9, 10}, &shahash[0], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
-		wire.NewMsgPubKey(543, expired, 4, 1, 2, &pubkey[2], &pubkey[3], 3, 5,
-			[]byte{4, 5, 6, 7, 8, 9, 10}, &shahash[1], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
+	[]obj.Object{
+		obj.NewEncryptedPubKey(543, expires, 1, &shahash[0], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
+		obj.NewEncryptedPubKey(543, expired, 1, &shahash[1], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
 	},
-	[]wire.Message{
-		wire.NewMsgMsg(765, expires, 1, 1,
-			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23},
-			1, 1, 2, &pubkey[0], &pubkey[1], 3, 5, &ripehash[0], 1,
-			[]byte{21, 22, 23, 24, 25, 26, 27, 28},
-			[]byte{20, 21, 22, 23, 24, 25, 26, 27},
-			[]byte{19, 20, 21, 22, 23, 24, 25, 26}),
-		wire.NewMsgMsg(765, expired, 1, 1,
-			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55},
-			1, 1, 2, &pubkey[2], &pubkey[3], 3, 5, &ripehash[1], 1,
-			[]byte{21, 22, 23, 24, 25, 26, 27, 28, 79},
-			[]byte{20, 21, 22, 23, 24, 25, 26, 27, 79},
-			[]byte{19, 20, 21, 22, 23, 24, 25, 26, 79}),
+	[]obj.Object{
+		obj.NewMessage(765, expires, 1,
+			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23}),
+		obj.NewMessage(765, expired, 1,
+			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55}),
 	},
-	[]wire.Message{
-		wire.NewMsgBroadcast(876, expires, 1, 1, &shahash[0],
-			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23},
-			1, 1, 2, &pubkey[0], &pubkey[1], 3, 5, 1,
-			[]byte{27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41},
-			[]byte{42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56}),
-		wire.NewMsgBroadcast(876, expired, 1, 1, &shahash[1],
-			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55},
-			1, 1, 2, &pubkey[2], &pubkey[3], 3, 5, 1,
-			[]byte{27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40},
-			[]byte{42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55}),
+	[]obj.Object{
+		obj.NewTaggedBroadcast(876, expires, 1, &shahash[0],
+			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23}),
+		obj.NewTaggedBroadcast(876, expired, 1, &shahash[1],
+			[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55}),
 	},
-	[]wire.Message{
-		wire.NewMsgUnknownObject(345, expires, wire.ObjectType(4), 1, 1, []byte{77, 82, 53, 48, 96, 1}),
-		wire.NewMsgUnknownObject(987, expired, wire.ObjectType(4), 1, 1, []byte{1, 2, 3, 4, 5, 0, 6, 7, 8, 9, 100}),
+	[]obj.Object{
+		wire.NewMsgObject(wire.NewObjectHeader(345, expires, wire.ObjectType(4), 1, 1),
+			[]byte{77, 82, 53, 48, 96, 1}),
+		wire.NewMsgObject(wire.NewObjectHeader(987, expired, wire.ObjectType(4), 1, 1),
+			[]byte{1, 2, 3, 4, 5, 0, 6, 7, 8, 9, 100}),
 	},
-	[]wire.Message{
-		wire.NewMsgUnknownObject(7288, expires, wire.ObjectType(5), 1, 1, []byte{0, 0, 0, 0, 1, 0, 0}),
-		wire.NewMsgUnknownObject(7288, expired, wire.ObjectType(5), 1, 1, []byte{0, 0, 0, 0, 0, 0, 0, 99, 98, 97}),
+	[]obj.Object{
+		wire.NewMsgObject(wire.NewObjectHeader(7288, expires, wire.ObjectType(5), 1, 1),
+			[]byte{0, 0, 0, 0, 1, 0, 0}),
+		wire.NewMsgObject(wire.NewObjectHeader(7288, expired, wire.ObjectType(5), 1, 1),
+			[]byte{0, 0, 0, 0, 0, 0, 0, 99, 98, 97}),
 	},
 }
 
@@ -137,7 +126,7 @@ func testObject(tc *testContext) {
 	defer teardown()
 
 	for i, object := range testObj {
-		msg, _ := wire.ToMsgObject(object[0])
+		msg := object[0]
 		_, err := tc.db.InsertObject(msg)
 		if err != nil {
 			tc.t.Errorf("InsertObject (%s): object #%d,"+
@@ -170,7 +159,7 @@ func testObject(tc *testContext) {
 			tc.t.Errorf("FetchObjectByHash (%s): object #%d, got error %v",
 				tc.dbType, i, err)
 		}
-		if !reflect.DeepEqual(msg, testMsg) {
+		if !reflect.DeepEqual(wire.Encode(msg), wire.Encode(testMsg)) {
 			tc.t.Errorf("FetchObjectByHash (%s): object #%d,"+
 				" data does not match", tc.dbType, i)
 		}
@@ -239,7 +228,7 @@ func testCounter(tc *testContext) {
 		}
 
 		// Insert an element and make sure the counter comes out correct.
-		msg, _ := wire.ToMsgObject(testObj[i][0])
+		msg := testObj[i][0]
 		count, err = tc.db.InsertObject(msg)
 		if err != nil {
 			tc.t.Errorf("InsertObject (%s): object #%d #%d of type %s,"+
@@ -258,11 +247,11 @@ func testCounter(tc *testContext) {
 			tc.t.Errorf("FetchObjectByCounter (%s): fetching object"+
 				" of type %s, got error %v", tc.dbType, objType, err)
 		}
-		if !reflect.DeepEqual(testMsg, msg) {
+		if !reflect.DeepEqual(wire.Encode(testMsg), wire.Encode(msg)) {
 			tc.t.Errorf("FetchObjectByCounter (%s): data mismatch", tc.dbType)
 		}
 
-		msg1, _ := wire.ToMsgObject(testObj[i][1])
+		msg1 := testObj[i][1]
 
 		count, err = tc.db.InsertObject(msg1)
 		if err != nil {
@@ -283,7 +272,7 @@ func testCounter(tc *testContext) {
 			tc.t.Errorf("FetchObjectByCounter (%s): fetching existing object"+
 				" of type %s, got error %v", tc.dbType, objType, err)
 		}
-		if !reflect.DeepEqual(testMsg, msg1) {
+		if !reflect.DeepEqual(wire.Encode(testMsg), wire.Encode(msg1)) {
 			tc.t.Errorf("FetchObjectByCounter (%s): data mismatch", tc.dbType)
 		}
 
@@ -529,8 +518,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
-	}
-	if !reflect.DeepEqual(&idV2.Address, addrV2) {
+	} else if !reflect.DeepEqual(&idV2.Address, addrV2) {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -540,8 +528,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
-	}
-	if !reflect.DeepEqual(&idV3.Address, addrV3) {
+	} else if !reflect.DeepEqual(&idV3.Address, addrV3) {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -576,7 +563,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("InsertObject (%s): got error %v", tc.dbType, err)
 	}
-	tag, _ = wire.NewShaHash(msg.Payload[:32])
+	tag, _ = wire.NewShaHash(msg.Payload()[:32])
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err != nil {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): got error %v", tc.dbType, err)
@@ -632,8 +619,7 @@ func testFilters(tc *testContext) {
 	defer teardown()
 
 	for _, messages := range testObj {
-		for _, message := range messages {
-			msg, _ := wire.ToMsgObject(message)
+		for _, msg := range messages {
 			_, _ = tc.db.InsertObject(msg)
 		}
 	}
@@ -666,8 +652,7 @@ func testRemoveExpiredObjects(tc *testContext) {
 	defer teardown()
 
 	for _, messages := range testObj {
-		for _, message := range messages {
-			msg, _ := wire.ToMsgObject(message)
+		for _, msg := range messages {
 			_, _ = tc.db.InsertObject(msg)
 		}
 	}
@@ -675,8 +660,7 @@ func testRemoveExpiredObjects(tc *testContext) {
 	tc.db.RemoveExpiredObjects()
 
 	for i, messages := range testObj {
-		for j, message := range messages {
-			msg, _ := wire.ToMsgObject(message)
+		for j, msg := range messages {
 			hash := msg.InventoryHash()
 
 			exists, _ := tc.db.ExistsObject(hash)

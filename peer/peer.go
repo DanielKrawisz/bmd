@@ -374,7 +374,7 @@ func (p *Peer) PushAddrMsg(addresses []*wire.NetAddress) error {
 		if Na == nil {
 			continue
 		}
-		
+
 		// Filter addresses the peer already knows about.
 		if _, exists := p.knownAddresses[addrmgr.NetAddressKey(Na)]; exists {
 			continue
@@ -713,10 +713,8 @@ out:
 		case *wire.MsgGetData:
 			err = p.HandleGetDataMsg(msg)
 
-		case *wire.MsgGetPubKey, *wire.MsgPubKey, *wire.MsgMsg,
-			*wire.MsgBroadcast, *wire.MsgUnknownObject:
-			objMsg, _ := wire.ToMsgObject(rmsg)
-			err = p.HandleObjectMsg(objMsg)
+		case *wire.MsgObject:
+			err = p.HandleObjectMsg(msg)
 
 		case *wire.MsgPong:
 

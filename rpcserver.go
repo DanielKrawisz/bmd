@@ -22,9 +22,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcutil"
 	pb "github.com/DanielKrawisz/bmd/rpcproto"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/btcsuite/btcutil"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"

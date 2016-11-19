@@ -22,6 +22,7 @@ import (
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 // resetCfg is called to refresh configuration before every test. The returned
@@ -40,7 +41,7 @@ func resetCfg(cfg *config) func() {
 	}
 }
 
-func getMemDb(msgs []*wire.MsgObject) database.Db {
+func getMemDb(msgs []obj.Object) database.Db {
 	db, err := database.OpenDB("memdb")
 	if err != nil {
 		return nil
@@ -96,51 +97,34 @@ var ripehash = []wire.RipeHash{
 }
 
 // Some bitmessage objects that we use for testing. Two of each.
-var testObj = []wire.Message{
-	wire.NewMsgGetPubKey(654, expires, 4, 1, &ripehash[0], &shahash[0]),
-	wire.NewMsgGetPubKey(654, expires, 4, 1, &ripehash[1], &shahash[1]),
-	wire.NewMsgPubKey(543, expires, 4, 1, 2, &pubkey[0], &pubkey[1], 3, 5,
-		[]byte{4, 5, 6, 7, 8, 9, 10}, &shahash[0], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
-	wire.NewMsgPubKey(543, expires, 4, 1, 2, &pubkey[2], &pubkey[3], 3, 5,
-		[]byte{4, 5, 6, 7, 8, 9, 10}, &shahash[1], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
-	wire.NewMsgMsg(765, expires, 1, 1,
-		[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23},
-		1, 1, 2, &pubkey[0], &pubkey[1], 3, 5, &ripehash[0], 1,
-		[]byte{21, 22, 23, 24, 25, 26, 27, 28},
-		[]byte{20, 21, 22, 23, 24, 25, 26, 27},
-		[]byte{19, 20, 21, 22, 23, 24, 25, 26}),
-	wire.NewMsgMsg(765, expires, 1, 1,
-		[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55},
-		1, 1, 2, &pubkey[2], &pubkey[3], 3, 5, &ripehash[1], 1,
-		[]byte{21, 22, 23, 24, 25, 26, 27, 28, 79},
-		[]byte{20, 21, 22, 23, 24, 25, 26, 27, 79},
-		[]byte{19, 20, 21, 22, 23, 24, 25, 26, 79}),
-	wire.NewMsgBroadcast(876, expires, 1, 1, &shahash[0],
-		[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23},
-		1, 1, 2, &pubkey[0], &pubkey[1], 3, 5, 1,
-		[]byte{27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41},
-		[]byte{42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56}),
-	wire.NewMsgBroadcast(876, expires, 1, 1, &shahash[1],
-		[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55},
-		1, 1, 2, &pubkey[2], &pubkey[3], 3, 5, 1,
-		[]byte{27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40},
-		[]byte{42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55}),
-	wire.NewMsgUnknownObject(345, expires, wire.ObjectType(4), 1, 1, []byte{77, 82, 53, 48, 96, 1}),
-	wire.NewMsgUnknownObject(987, expires, wire.ObjectType(4), 1, 1, []byte{1, 2, 3, 4, 5, 0, 6, 7, 8, 9, 100}),
-	wire.NewMsgUnknownObject(7288, expires, wire.ObjectType(5), 1, 1, []byte{0, 0, 0, 0, 1, 0, 0}),
-	wire.NewMsgUnknownObject(7288, expires, wire.ObjectType(5), 1, 1, []byte{0, 0, 0, 0, 0, 0, 0, 99, 98, 97}),
+var testObj = []obj.Object{
+	obj.NewGetPubKey(654, expires, 4, 1, &ripehash[0], &shahash[0]).MsgObject(),
+	obj.NewGetPubKey(654, expires, 4, 1, &ripehash[1], &shahash[1]).MsgObject(),
+	obj.NewEncryptedPubKey(543, expires, 1, &shahash[0], []byte{11, 12, 13, 14, 15, 16, 17, 18}).MsgObject(),
+	obj.NewEncryptedPubKey(543, expires, 1, &shahash[1], []byte{11, 12, 13, 14, 15, 16, 17, 18}).MsgObject(),
+	obj.NewMessage(765, expires, 1,
+		[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55, 2, 23}).MsgObject(),
+	obj.NewMessage(765, expires, 1,
+		[]byte{90, 87, 66, 45, 3, 2, 120, 101, 78, 78, 78, 7, 85, 55}).MsgObject(),
+	obj.NewTaggedBroadcast(876, expires, 1, &shahash[0],
+		[]byte{42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56}).MsgObject(),
+	obj.NewTaggedBroadcast(876, expires, 1, &shahash[1],
+		[]byte{42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55}).MsgObject(),
+	wire.NewMsgObject(wire.NewObjectHeader(345, expires, wire.ObjectType(4), 1, 1), []byte{77, 82, 53, 48, 96, 1}),
+	wire.NewMsgObject(wire.NewObjectHeader(987, expires, wire.ObjectType(4), 1, 1), []byte{1, 2, 3, 4, 5, 0, 6, 7, 8, 9, 100}),
+	wire.NewMsgObject(wire.NewObjectHeader(7288, expires, wire.ObjectType(5), 1, 1), []byte{0, 0, 0, 0, 1, 0, 0}),
+	wire.NewMsgObject(wire.NewObjectHeader(7288, expires, wire.ObjectType(5), 1, 1), []byte{0, 0, 0, 0, 0, 0, 0, 99, 98, 97}),
 }
 
 func init() {
 	// Calculate pow for object messages.
 	for i := 0; i < len(testObj); i++ {
-		b := wire.EncodeMessage(testObj[i])
+		b := wire.Encode(testObj[i])
 		section := b[8:]
 		hash := bmutil.Sha512(section)
 		nonce := pow.DoSequential(pow.CalculateTarget(uint64(len(section)),
-			uint64(expires.Sub(time.Now()).Seconds()), pow.DefaultNonceTrialsPerByte,
-			pow.DefaultExtraBytes), hash)
-		binary.BigEndian.PutUint64(b, nonce)
+			uint64(expires.Sub(time.Now()).Seconds()), pow.DefaultData), hash)
+		binary.BigEndian.PutUint64(b, uint64(nonce))
 		testObj[i], _ = wire.DecodeMsgObject(b)
 	}
 
@@ -239,10 +223,10 @@ func TestOutboundPeerHandshake(t *testing.T) {
 
 		// Create server and start it.
 		listeners := []string{net.JoinHostPort("", "8445")}
-		serv, err := newServer(listeners, getMemDb([]*wire.MsgObject{}),
+		serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 			MockListen([]*MockListener{
-				NewMockListener(localAddr, make(chan peer.Connection), make(chan struct{}, 1))}), 
-				permament)
+				NewMockListener(localAddr, make(chan peer.Connection), make(chan struct{}, 1))}),
+			permament)
 		if err != nil {
 			t.Fatalf("Server failed to start: %s", err)
 		}
@@ -334,7 +318,7 @@ func TestInboundPeerHandshake(t *testing.T) {
 		// Create server and start it.
 		listeners := []string{net.JoinHostPort("", "8445")}
 		var err error
-		serv, err := newServer(listeners, getMemDb([]*wire.MsgObject{}),
+		serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 			MockListen([]*MockListener{
 				NewMockListener(localAddr, incoming, make(chan struct{}))}), nil)
 		if err != nil {
@@ -435,7 +419,7 @@ func TestProcessAddr(t *testing.T) {
 
 		// Create server and start it.
 		listeners := []string{net.JoinHostPort("", "8445")}
-		serv, err := newServer(listeners, getMemDb([]*wire.MsgObject{}),
+		serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 			MockListen([]*MockListener{
 				NewMockListener(localAddr, incoming, make(chan struct{}))}), nil)
 		if err != nil {
@@ -490,55 +474,55 @@ func TestProcessInvAndObjectExchange(t *testing.T) {
 	TooLongInv := &wire.MsgInv{InvList: tooLongInvVect}
 
 	tests := []struct {
-		peerDB []*wire.MsgObject // The messages already in the peer's db.
-		mockDB []*wire.MsgObject // The messages that are already in the
+		peerDB []obj.Object // The messages already in the peer's db.
+		mockDB []obj.Object // The messages that are already in the
 		// Action for the mock peer to take upon receiving an inv. If this is
 		// nil, then an appropriate action is constructed.
 		invAction *PeerAction
 	}{
 		{ // Nobody has any inv in this test case!
-			[]*wire.MsgObject{},
-			[]*wire.MsgObject{},
+			[]obj.Object{},
+			[]obj.Object{},
 			&PeerAction{
 				Messages:            []wire.Message{&wire.MsgVerAck{}},
 				InteractionComplete: true},
 		},
 		{ // Send empty inv and should be disconnected.
-			[]*wire.MsgObject{},
-			[]*wire.MsgObject{},
+			[]obj.Object{},
+			[]obj.Object{},
 			&PeerAction{
 				Messages:            []wire.Message{&wire.MsgVerAck{}, wire.NewMsgInv()},
 				InteractionComplete: true,
 				DisconnectExpected:  true},
 		},
 		{ // Only the real peer should request data.
-			[]*wire.MsgObject{},
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[2]), toMsgObject(testObj[4]), toMsgObject(testObj[6]), toMsgObject(testObj[8])},
+			[]obj.Object{},
+			[]obj.Object{testObj[0], testObj[2], testObj[4], testObj[6], testObj[8]},
 			nil,
 		},
 		{ // Neither peer should request data.
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[2]), toMsgObject(testObj[4]), toMsgObject(testObj[6]), toMsgObject(testObj[8])},
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[2]), toMsgObject(testObj[4]), toMsgObject(testObj[6]), toMsgObject(testObj[8])},
+			[]obj.Object{testObj[0], testObj[2], testObj[4], testObj[6], testObj[8]},
+			[]obj.Object{testObj[0], testObj[2], testObj[4], testObj[6], testObj[8]},
 			nil,
 		},
 		{ // Only the mock peer should request data.
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[2]), toMsgObject(testObj[4]), toMsgObject(testObj[6]), toMsgObject(testObj[8])},
-			[]*wire.MsgObject{},
+			[]obj.Object{testObj[0], testObj[2], testObj[4], testObj[6], testObj[8]},
+			[]obj.Object{},
 			nil,
 		},
 		{ // The peers have no data in common, so they should both ask for everything of the other.
-			[]*wire.MsgObject{toMsgObject(testObj[1]), toMsgObject(testObj[3]), toMsgObject(testObj[5]), toMsgObject(testObj[7]), toMsgObject(testObj[9])},
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[2]), toMsgObject(testObj[4]), toMsgObject(testObj[6]), toMsgObject(testObj[8])},
+			[]obj.Object{testObj[1], testObj[3], testObj[5], testObj[7], testObj[9]},
+			[]obj.Object{testObj[0], testObj[2], testObj[4], testObj[6], testObj[8]},
 			nil,
 		},
 		{ // The peers have some data in common.
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[3]), toMsgObject(testObj[5]), toMsgObject(testObj[7]), toMsgObject(testObj[9])},
-			[]*wire.MsgObject{toMsgObject(testObj[0]), toMsgObject(testObj[2]), toMsgObject(testObj[4]), toMsgObject(testObj[6]), toMsgObject(testObj[8])},
+			[]obj.Object{testObj[0], testObj[3], testObj[5], testObj[7], testObj[9]},
+			[]obj.Object{testObj[0], testObj[2], testObj[4], testObj[6], testObj[8]},
 			nil,
 		},
 		{
-			[]*wire.MsgObject{},
-			[]*wire.MsgObject{},
+			[]obj.Object{},
+			[]obj.Object{},
 			&PeerAction{
 				Messages:            []wire.Message{&wire.MsgVerAck{}, TooLongInv},
 				DisconnectExpected:  true,

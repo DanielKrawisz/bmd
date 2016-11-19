@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/DanielKrawisz/bmd/peer"
-	"github.com/monetas/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire"
 )
 
 func TestNewInventory(t *testing.T) {

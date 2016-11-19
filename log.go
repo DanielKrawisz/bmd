@@ -13,13 +13,13 @@ import (
 	"os"
 	"strings"
 
-	"github.com/btcsuite/btclog"
-	"github.com/btcsuite/seelog"
 	"github.com/DanielKrawisz/bmd/addrmgr"
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmd/objmgr"
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/btcsuite/btclog"
+	"github.com/btcsuite/seelog"
 )
 
 const (
@@ -240,7 +240,7 @@ func messageSummary(msg wire.Message) string {
 	case *wire.MsgGetData:
 		return invSummary(msg.InvList)
 
-	case *wire.MsgBroadcast, *wire.MsgMsg, *wire.MsgGetPubKey, *wire.MsgPubKey, *wire.MsgUnknownObject:
+	case *wire.MsgObject:
 		// TODO
 	}
 

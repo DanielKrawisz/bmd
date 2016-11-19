@@ -47,16 +47,15 @@ func (s *rpcServer) SendObject(ctx context.Context, in *pb.Object) (*pb.SendObje
 	}
 
 	// Check whether the object is valid.
-	if time.Now().After(objMsg.ExpiresTime) { // already expired
+	if time.Now().After(objMsg.Header().Expiration()) { // already expired
 		return nil, grpc.Errorf(codes.InvalidArgument, "object already expired")
 	}
-	if objMsg.StreamNumber != 1 { // TODO improve
+	if objMsg.Header().StreamNumber != 1 { // TODO improve
 		return nil, grpc.Errorf(codes.InvalidArgument, "invalid stream")
 	}
 
 	// Check whether the PoW is valid.
-	if !pow.Check(objMsg, pow.DefaultExtraBytes, pow.DefaultNonceTrialsPerByte,
-		time.Now()) {
+	if !objMsg.CheckPow(pow.DefaultData, time.Now()) {
 		return nil, grpc.Errorf(codes.InvalidArgument, "invalid proof of work")
 	}
 
@@ -142,10 +141,10 @@ func (s *rpcServer) GetObjects(in *pb.GetObjectsRequest, stream pb.Bmd_GetObject
 		fromCounter = lastCount + 1
 
 		// Send objects to client.
-		for _, obj := range objs {
+		for _, object := range objs {
 			out := &pb.Object{
-				Contents: wire.EncodeMessage(obj.Object),
-				Counter:  obj.Counter,
+				Contents: wire.Encode(object.Object),
+				Counter:  object.Counter,
 			}
 			err = stream.Send(out)
 			if err != nil {
