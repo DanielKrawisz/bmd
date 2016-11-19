@@ -12,13 +12,15 @@ import (
 	prand "math/rand"
 	"time"
 
-	"github.com/boltdb/bolt"
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/cipher"
+	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/identity"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
+	"github.com/boltdb/bolt"
+	"github.com/btcsuite/btcd/btcec"
 )
 
 const (
@@ -109,7 +111,7 @@ func (db *BoltDB) objectByHash(tx *bolt.Tx, hash []byte) (*wire.MsgObject, error
 }
 
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
-func (db *BoltDB) FetchObjectByHash(hash *wire.ShaHash) (*wire.MsgObject, error) {
+func (db *BoltDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 	var obj *wire.MsgObject
 	var err error
 
@@ -132,7 +134,7 @@ func (db *BoltDB) FetchObjectByHash(hash *wire.ShaHash) (*wire.MsgObject, error)
 // as a convenience method for fetching new data from database since last
 // check.
 func (db *BoltDB) FetchObjectByCounter(objType wire.ObjectType,
-	counter uint64) (*wire.MsgObject, error) {
+	counter uint64) (obj.Object, error) {
 
 	bCounter := make([]byte, 8)
 	binary.BigEndian.PutUint64(bCounter, counter)
@@ -215,9 +217,9 @@ func (db *BoltDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint6
 func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public, error) {
 
 	switch addr.Version {
-	case wire.SimplePubKeyVersion:
-	case wire.ExtendedPubKeyVersion:
-	case wire.EncryptedPubKeyVersion:
+	case obj.SimplePubKeyVersion:
+	case obj.ExtendedPubKeyVersion:
+	case obj.EncryptedPubKeyVersion:
 	default:
 		return nil, database.ErrNotImplemented
 	}
@@ -250,8 +252,10 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 		}
 
 		id = identity.NewPublic(signKey, encKey,
-			binary.BigEndian.Uint64(bucket.Get(nonceTrialsKey)),
-			binary.BigEndian.Uint64(bucket.Get(extraBytesKey)),
+			&pow.Data{
+				binary.BigEndian.Uint64(bucket.Get(nonceTrialsKey)),
+				binary.BigEndian.Uint64(bucket.Get(extraBytesKey)), 
+			},
 			addr.Version, addr.Stream)
 		return nil
 
@@ -259,7 +263,7 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 	// Possible that encrypted pubkeys not yet decrypted and stored here.
 	if err != nil {
 		if err == database.ErrNonexistentObject &&
-			addr.Version == wire.EncryptedPubKeyVersion { // do nothing.
+			addr.Version == obj.EncryptedPubKeyVersion { // do nothing.
 		} else {
 			return nil, err
 		}
@@ -276,7 +280,7 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 			return database.ErrNonexistentObject
 		}
 
-		msg := &wire.MsgPubKey{}
+		msg := &wire.MsgObject{}
 		err := msg.Decode(bytes.NewReader(v))
 		if err != nil {
 			log.Criticalf("Failed to decode pubkey with tag %x: %v", addrTag, err)
@@ -284,7 +288,7 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 		}
 
 		// Decrypt the pubkey.
-		err = cipher.TryDecryptAndVerifyPubKey(msg, addr)
+		pubkey, err := cipher.TryDecryptAndVerifyPubKey(msg, addr)
 		if err != nil {
 			// It's an invalid pubkey so remove it.
 			tx.Bucket(encPubkeysBucket).Delete(addrTag)
@@ -292,12 +296,11 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 		}
 
 		// Already verified them in TryDecryptAndVerifyPubKey.
-		signKey, _ := msg.SigningKey.ToBtcec()
-		encKey, _ := msg.EncryptionKey.ToBtcec()
+		signKey, _ := pubkey.VerificationKey().ToBtcec()
+		encKey, _ := pubkey.EncryptionKey().ToBtcec()
 
 		// And we have the identity.
-		id = identity.NewPublic(signKey, encKey,
-			msg.NonceTrials, msg.ExtraBytes, msg.Version, msg.StreamNumber)
+		id = identity.NewPublic(signKey, encKey, pubkey.Pow(), msg.Header().Version, msg.Header().StreamNumber)
 
 		// Add public key to database.
 		b, err := tx.Bucket(pubIDBucket).CreateBucketIfNotExists([]byte(address))
@@ -393,46 +396,78 @@ func (db *BoltDB) GetCounter(objType wire.ObjectType) (uint64, error) {
 
 // insertPubkey inserts a pubkey into the database. It's a helper method called
 // from within InsertObject.
-func (db *BoltDB) insertPubkey(obj *wire.MsgObject) error {
-	b := wire.EncodeMessage(obj)
-	pubkeyMsg := &wire.MsgPubKey{}
-	err := pubkeyMsg.Decode(bytes.NewReader(b))
-	if err != nil {
-		return err
-	}
+func (db *BoltDB) insertPubkey(object obj.Object) error {
+	o := obj.ReadObject(object.MsgObject())
+	
+	header := o.Header()
 
-	switch pubkeyMsg.Version {
-	case wire.SimplePubKeyVersion:
-		fallthrough
-	case wire.ExtendedPubKeyVersion:
+	switch pubkeyMsg := o.(type) {
+	case *obj.SimplePubKey:
 		// Check signing key.
-		signKey, err := pubkeyMsg.SigningKey.ToBtcec()
+		signKey, err := pubkeyMsg.Data.VerificationKey.ToBtcec()
 		if err != nil {
 			return err
 		}
 
 		// Check encryption key.
-		encKey, err := pubkeyMsg.EncryptionKey.ToBtcec()
+		encKey, err := pubkeyMsg.Data.EncryptionKey.ToBtcec()
 		if err != nil {
 			return err
 		}
 
 		// Create identity.
-		id := identity.NewPublic(signKey, encKey, pubkeyMsg.NonceTrials,
-			pubkeyMsg.ExtraBytes, pubkeyMsg.Version,
-			pubkeyMsg.StreamNumber)
+		id := identity.NewPublic(signKey, encKey, nil, header.Version, header.StreamNumber)
 
 		address, err := id.Address.Encode()
 		if err != nil {
 			return err
 		}
 
-		// Verify signature.
-		if pubkeyMsg.Version == wire.ExtendedPubKeyVersion {
-			err = cipher.TryDecryptAndVerifyPubKey(pubkeyMsg, nil)
+		// Now that all is well, insert it into the database.
+		return db.Update(func(tx *bolt.Tx) error {
+			b, err := tx.Bucket(pubIDBucket).CreateBucketIfNotExists([]byte(address))
 			if err != nil {
 				return err
 			}
+
+			ntb := make([]byte, 8)
+			binary.BigEndian.PutUint64(ntb, id.NonceTrialsPerByte)
+
+			ebb := make([]byte, 8)
+			binary.BigEndian.PutUint64(ebb, id.ExtraBytes)
+
+			bb := make([]byte, 4)
+			binary.BigEndian.PutUint32(bb, id.Behavior)
+
+			b.Put(nonceTrialsKey, ntb)
+			b.Put(extraBytesKey, ebb)
+			b.Put(behaviorKey, bb)
+			b.Put(signKeyKey, id.SigningKey.SerializeCompressed())
+			b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
+
+			return nil
+		})
+		
+	case *obj.ExtendedPubKey:
+		// Check signing key.
+		signKey, err := pubkeyMsg.Data.VerificationKey.ToBtcec()
+		if err != nil {
+			return err
+		}
+
+		// Check encryption key.
+		encKey, err := pubkeyMsg.Data.EncryptionKey.ToBtcec()
+		if err != nil {
+			return err
+		}
+
+		// Create identity.
+		id := identity.NewPublic(signKey, encKey, pubkeyMsg.Data.Pow, header.Version,
+			header.StreamNumber)
+
+		address, err := id.Address.Encode()
+		if err != nil {
+			return err
 		}
 
 		// Now that all is well, insert it into the database.
@@ -460,10 +495,13 @@ func (db *BoltDB) insertPubkey(obj *wire.MsgObject) error {
 			return nil
 		})
 
-	case wire.EncryptedPubKeyVersion:
+	case *obj.EncryptedPubKey:
+		var b bytes.Buffer
+		object.Encode(&b)
+	
 		// Add it to database, along with the tag.
 		return db.Update(func(tx *bolt.Tx) error {
-			return tx.Bucket(encPubkeysBucket).Put(pubkeyMsg.Tag[:], b)
+			return tx.Bucket(encPubkeysBucket).Put(pubkeyMsg.Tag[:], b.Bytes())
 		})
 	}
 
@@ -474,18 +512,20 @@ func (db *BoltDB) insertPubkey(obj *wire.MsgObject) error {
 // counter position. If the object is a PubKey, it inserts it into a
 // separate place where it isn't touched by RemoveObject or
 // RemoveExpiredObjects and has to be removed using RemovePubKey.
-func (db *BoltDB) InsertObject(obj *wire.MsgObject) (uint64, error) {
+func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 	// Check if we already have the object.
-	exists, err := db.ExistsObject(obj.InventoryHash())
+	exists, err := db.ExistsObject(o.InventoryHash())
 	if err != nil {
 		return 0, err
 	}
 	if exists {
 		return 0, database.ErrDuplicateObject
 	}
+	
+	header := o.Header()
 	// Insert into pubkey bucket if they're pubkeys.
-	if obj.ObjectType == wire.ObjectTypePubKey {
-		err = db.insertPubkey(obj)
+	if header.ObjectType == wire.ObjectTypePubKey {
+		err = db.insertPubkey(o)
 		if err != nil {
 			log.Infof("Failed to insert pubkey: %v", err)
 		}
@@ -493,32 +533,36 @@ func (db *BoltDB) InsertObject(obj *wire.MsgObject) (uint64, error) {
 	}
 
 	var counter uint64
-	b := wire.EncodeMessage(obj)
+	var b bytes.Buffer
+	err = o.Encode(&b)
+	if err != nil {
+		return 0, err
+	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
 
 		// Insert object along with its hash.
-		err = tx.Bucket(objectsBucket).Put(obj.InventoryHash()[:], b)
+		err = tx.Bucket(objectsBucket).Put(o.InventoryHash()[:], b.Bytes())
 		if err != nil {
 			return err
 		}
 
 		// Get latest counter value.
-		v := tx.Bucket(counterPosBucket).Get([]byte(obj.ObjectType.String()))
+		v := tx.Bucket(counterPosBucket).Get([]byte(header.ObjectType.String()))
 		counter = binary.BigEndian.Uint64(v) + 1
 
 		bCounter := make([]byte, 8)
 		binary.BigEndian.PutUint64(bCounter, counter)
 
 		// Store counter value along with hash.
-		err = tx.Bucket(countersBucket).Bucket([]byte(obj.ObjectType.String())).
-			Put(bCounter, obj.InventoryHash()[:])
+		err = tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).
+			Put(bCounter, o.InventoryHash()[:])
 		if err != nil {
 			return err
 		}
 
 		// Store new counter value.
-		return tx.Bucket(counterPosBucket).Put([]byte(obj.ObjectType.String()),
+		return tx.Bucket(counterPosBucket).Put([]byte(header.ObjectType.String()),
 			bCounter)
 	})
 	if err != nil {
@@ -538,7 +582,7 @@ func (db *BoltDB) RemoveObject(hash *wire.ShaHash) error {
 		}
 
 		// Get the object type.
-		_, _, objType, _, _, err := wire.DecodeMsgObjectHeader(bytes.NewReader(obj))
+		header, err := wire.DecodeObjectHeader(bytes.NewReader(obj))
 		if err != nil {
 			log.Criticalf("Failed to decode object with hash %s: %v", hash, err)
 			return err
@@ -551,7 +595,7 @@ func (db *BoltDB) RemoveObject(hash *wire.ShaHash) error {
 		}
 
 		// Delete object from the counters bucket.
-		cursor := tx.Bucket(countersBucket).Bucket([]byte(objType.String())).Cursor()
+		cursor := tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).Cursor()
 		for k, v := cursor.First(); k != nil || v != nil; k, v = cursor.Next() {
 			if bytes.Equal(v, hash[:]) { // We found a match so delete this.
 				return cursor.Delete()
@@ -613,7 +657,7 @@ func (db *BoltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 				}
 
 				// Current time - 3 hours
-				if time.Now().Add(-time.Hour * 3).After(obj.ExpiresTime) { // Expired
+				if time.Now().Add(-time.Hour * 3).After(obj.Header().Expiration()) { // Expired
 
 					// Remove object from objects bucket.
 					err = tx.Bucket(objectsBucket).Delete(v)

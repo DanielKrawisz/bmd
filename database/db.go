@@ -12,8 +12,10 @@ import (
 	"errors"
 
 	"github.com/DanielKrawisz/bmutil"
+	"github.com/DanielKrawisz/bmutil/cipher"
 	"github.com/DanielKrawisz/bmutil/identity"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 // Errors that the various database functions may return.
@@ -30,7 +32,7 @@ var (
 // value. It's returned by FetchObjectsFromCounter.
 type ObjectWithCounter struct {
 	Counter uint64
-	Object  *wire.MsgObject
+	Object  obj.Object
 }
 
 // Db defines a generic interface that is used to request and insert data into
@@ -46,14 +48,14 @@ type Db interface {
 	ExistsObject(*wire.ShaHash) (bool, error)
 
 	// FetchObjectByHash returns an object from the database as a wire.MsgObject.
-	FetchObjectByHash(*wire.ShaHash) (*wire.MsgObject, error)
+	FetchObjectByHash(*wire.ShaHash) (obj.Object, error)
 
 	// FetchObjectByCounter returns the corresponding object based on the
 	// counter. Note that each object type has a different counter, with unknown
 	// objects being consolidated into one counter. Counters are meant for use
 	// as a convenience method for fetching new data from database since last
 	// check.
-	FetchObjectByCounter(wire.ObjectType, uint64) (*wire.MsgObject, error)
+	FetchObjectByCounter(wire.ObjectType, uint64) (obj.Object, error)
 
 	// FetchObjectsFromCounter returns a slice of `count' objects which have a
 	// counter position starting from `counter'. It also returns the counter
@@ -79,7 +81,7 @@ type Db interface {
 	// counter position. If the object is a PubKey, it inserts it into a
 	// separate place where it isn't touched by RemoveObject or
 	// RemoveExpiredObjects and has to be removed using RemovePubKey.
-	InsertObject(*wire.MsgObject) (uint64, error)
+	InsertObject(obj.Object) (uint64, error)
 
 	// RemoveObject removes the object with the specified hash from the
 	// database. Does not remove PubKeys.
@@ -144,4 +146,24 @@ func SupportedDBs() []string {
 		supportedDBs = append(supportedDBs, drv.DbType)
 	}
 	return supportedDBs
+}
+
+// CheckPubKey is used to check
+func CheckPubKey(pubkey cipher.PubKey) (id *identity.Public, err error) {
+	// Check signing key.
+	signKey, err := pubkey.VerificationKey().ToBtcec()
+	if err != nil {
+		return
+	}
+
+	// Check encryption key.
+	encKey, err := pubkey.EncryptionKey().ToBtcec()
+	if err != nil {
+		return
+	}
+
+	header := pubkey.Object().Header()
+
+	id = identity.NewPublic(signKey, encKey, pubkey.Pow(), header.Version, header.StreamNumber)
+	return
 }

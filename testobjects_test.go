@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"math/rand"
 	"net"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 // randomShaHash returns a ShaHash with a random string of bytes in it.
@@ -21,21 +21,6 @@ func randomShaHash() *wire.ShaHash {
 	}
 	hash, _ := wire.NewShaHash(b)
 	return hash
-}
-
-// toObject is used to return an object message type when it is certain that the
-// input message is encodable as such.
-func toMsgObject(msg wire.Message) *wire.MsgObject {
-	obj, _ := wire.ToMsgObject(msg)
-	return obj
-}
-
-func toObjectType(obj *wire.MsgObject) wire.Message {
-	var buf bytes.Buffer
-	wire.WriteMessage(&buf, obj, 0)
-
-	msg, _, _ := wire.ReadMessage(&buf, 0)
-	return msg
 }
 
 // MockListener implements the peer.Listener interface
@@ -160,10 +145,9 @@ func (mock *MockPeer) ReadMessage() (wire.Message, error) {
 	}
 
 	switch t := toSend.(type) {
-	case *wire.MsgGetPubKey, *wire.MsgPubKey, *wire.MsgMsg, *wire.MsgBroadcast, *wire.MsgUnknownObject, *wire.MsgObject:
-		msg, _ := wire.ToMsgObject(t)
+	case *wire.MsgObject:
 		mock.mutex.Lock()
-		mock.objectData = append(mock.objectData, msg.InventoryHash())
+		mock.objectData = append(mock.objectData, t.InventoryHash())
 		mock.mutex.Unlock()
 	}
 
@@ -635,9 +619,9 @@ type DataExchangePeerTester struct {
 	dataReceived  bool
 	invReceived   bool
 	invAction     *PeerAction
-	inventory     map[wire.InvVect]*wire.MsgObject // The initial inventory of the mock peer.
-	peerInventory map[wire.InvVect]struct{}        // The initial inventory of the real peer.
-	requested     map[wire.InvVect]struct{}        // The messages that were requested.
+	inventory     map[wire.InvVect]obj.Object // The initial inventory of the mock peer.
+	peerInventory map[wire.InvVect]struct{}   // The initial inventory of the real peer.
+	requested     map[wire.InvVect]struct{}   // The messages that were requested.
 }
 
 func (peer *DataExchangePeerTester) OnStart() *PeerAction {
@@ -723,7 +707,7 @@ func (peer *DataExchangePeerTester) OnMsgGetData(getData *wire.MsgGetData) *Peer
 		}
 
 		duplicate[*iv] = struct{}{}
-		messages[i] = toObjectType(msg)
+		messages[i] = msg.MsgObject()
 		peer.peerInventory[*iv] = struct{}{}
 		i++
 	}
@@ -759,9 +743,9 @@ func (peer *DataExchangePeerTester) OnSendData(invVect []*wire.InvVect) *PeerAct
 	return &PeerAction{nil, nil, false, false}
 }
 
-func NewDataExchangePeerTester(inventory []*wire.MsgObject, peerInventory []*wire.MsgObject, invAction *PeerAction) *DataExchangePeerTester {
+func NewDataExchangePeerTester(inventory []obj.Object, peerInventory []obj.Object, invAction *PeerAction) *DataExchangePeerTester {
 	// Catalog the initial inventories of the mock peer and real peer.
-	in := make(map[wire.InvVect]*wire.MsgObject)
+	in := make(map[wire.InvVect]obj.Object)
 	pin := make(map[wire.InvVect]struct{})
 	invMsg := wire.NewMsgInv()
 

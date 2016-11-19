@@ -122,7 +122,6 @@ func TestSendMessage(t *testing.T) {
 
 	queue.Stop()
 	time.Sleep(time.Millisecond * 50)
-
 }
 
 func TestRequestData(t *testing.T) {
@@ -132,11 +131,10 @@ func TestRequestData(t *testing.T) {
 	var err error
 
 	queue := peer.NewSend(peer.NewInventory(), db)
-	message := wire.NewMsgUnknownObject(345, time.Now(), wire.ObjectType(4), 1, 1, []byte{77, 82, 53, 48, 96, 1})
+	message := wire.NewMsgObject(wire.NewObjectHeader(345, time.Now(), wire.ObjectType(4), 1, 1), []byte{77, 82, 53, 48, 96, 1})
 
-	objMsg, _ := wire.ToMsgObject(message)
-	db.InsertObject(objMsg)
-	hashes := []*wire.InvVect{&wire.InvVect{Hash: *objMsg.InventoryHash()}}
+	db.InsertObject(message)
+	hashes := []*wire.InvVect{&wire.InvVect{Hash: *message.InventoryHash()}}
 
 	// The queue isn't running yet, so this should return an error.
 	err = queue.QueueDataRequest(hashes)
@@ -310,19 +308,20 @@ func TestRetrieveObject(t *testing.T) {
 	notThere := &wire.InvVect{Hash: *randomShaHash()}
 
 	// A valid object that will be in the database.
-	goodData := wire.NewMsgObject(345, time.Now(),
-		wire.ObjectType(4), 1, 1, []byte{77, 82, 53, 48, 96, 1})
+	goodData := wire.NewMsgObject(
+		wire.NewObjectHeader(345, time.Now(), wire.ObjectType(4), 1, 1),
+		[]byte{77, 82, 53, 48, 96, 1})
 	goodInv := &wire.InvVect{Hash: *goodData.InventoryHash()}
 	db.InsertObject(goodData)
 
 	// Retrieve objects that are not in the database.
-	obj := peer.TstRetrieveObject(db, notThere)
-	if obj != nil {
+	obj, err := peer.TstRetrieveObject(db, notThere)
+	if err == nil {
 		t.Error("Object returned that should not have been in the database: ", obj)
 	}
 
 	// Retrieve good objects from the database.
-	if peer.TstRetrieveObject(db, goodInv) == nil {
+	if _, err := peer.TstRetrieveObject(db, goodInv); err != nil {
 		t.Error("No object returned.")
 	}
 }

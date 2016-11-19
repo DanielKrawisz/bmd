@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DanielKrawisz/maxrate"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/maxrate"
 )
 
 var errNoConnection = errors.New("no connection established")

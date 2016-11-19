@@ -13,6 +13,7 @@ import (
 	"github.com/DanielKrawisz/bmd/peer"
 	pb "github.com/DanielKrawisz/bmd/rpcproto"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -129,7 +130,7 @@ func testRPCSendObject(c pb.BmdClient, t *testing.T) {
 	}
 
 	// Insert valid object.
-	data := wire.EncodeMessage(testObj[0]) // getpubkey
+	data := wire.EncodeMessage(testObj[0].MsgObject()) // getpubkey
 	ret, err := c.SendObject(context.Background(), &pb.Object{Contents: data})
 	if err != nil {
 		t.Errorf("for valid SendObject got error %v", err)
@@ -137,7 +138,7 @@ func testRPCSendObject(c pb.BmdClient, t *testing.T) {
 		t.Errorf("For counter expected %d got %d", 1, ret.Counter)
 	}
 
-	hash := toMsgObject(testObj[0]).InventoryHash()
+	hash := testObj[0].InventoryHash()
 
 	// Check if advertised.
 	if ok, err := serv.objectManager.HaveInventory(wire.NewInvVect(hash)); !ok {
@@ -166,13 +167,13 @@ func testRPCGetObjects(c pb.BmdClient, t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data := wire.EncodeMessage(testObj[0]) // getpubkey
+	data := wire.EncodeMessage(testObj[0].MsgObject()) // getpubkey
 	if !bytes.Equal(data, objMsg.Contents) {
 		t.Errorf("invalid getpubkey bytes, expected %v got %v", data, objMsg.Contents)
 	}
 
 	// Test if objects inserted after subscribing are handled correctly.
-	data = wire.EncodeMessage(testObj[1]) // getpubkey
+	data = wire.EncodeMessage(testObj[1].MsgObject()) // getpubkey
 	_, err = c.SendObject(context.Background(), &pb.Object{Contents: data})
 	if err != nil {
 		t.Errorf("for valid SendObject got error %v", err)
@@ -211,7 +212,7 @@ func TestRPCConnection(t *testing.T) {
 
 	// Create a server.
 	listeners := []string{net.JoinHostPort("", "8445")}
-	serv, err = newServer(listeners, getMemDb([]*wire.MsgObject{}),
+	serv, err = newServer(listeners, getMemDb([]obj.Object{}),
 		MockListen([]*MockListener{
 			NewMockListener(remoteAddr, make(chan peer.Connection), make(chan struct{}, 1))}), nil)
 

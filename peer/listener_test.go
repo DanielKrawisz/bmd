@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DanielKrawisz/mocknet"
 	"github.com/DanielKrawisz/bmd/peer"
-	"github.com/monetas/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/mocknet"
 )
 
 func TestConnectionAndListener(t *testing.T) {
@@ -29,8 +29,8 @@ func TestConnectionAndListener(t *testing.T) {
 
 	mockConn := mocknet.NewConn(localAddr, remoteAddr, false)
 
-	message1 := wire.NewMsgUnknownObject(617, time.Now(), wire.ObjectType(5), 12, 1, []byte{87, 99, 23, 56})
-	message2 := wire.NewMsgUnknownObject(616, time.Now(), wire.ObjectType(5), 12, 1, []byte{22, 55, 89, 107})
+	message1 := wire.NewMsgObject(wire.NewObjectHeader(617, time.Now(), wire.ObjectType(5), 12, 1), []byte{87, 99, 23, 56})
+	message2 := wire.NewMsgObject(wire.NewObjectHeader(616, time.Now(), wire.ObjectType(5), 12, 1), []byte{22, 55, 89, 107})
 
 	testStep := make(chan struct{})
 	go func() {
@@ -57,11 +57,10 @@ func TestConnectionAndListener(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error returned reading message.")
 		}
-		msgObj, _ := wire.ToMsgObject(msg)
+		msgObj, _ := msg.(*wire.MsgObject)
 		hashtest := msgObj.InventoryHash()
 
-		expObj, _ := wire.ToMsgObject(message1)
-		hashexp := expObj.InventoryHash()
+		hashexp := message1.InventoryHash()
 
 		if !hashexp.IsEqual(hashtest) {
 			t.Errorf("Wrong mock connection somehow returned?")
@@ -112,11 +111,10 @@ func TestConnectionAndListener(t *testing.T) {
 	// Write a message to the connection.
 	msg := MockRead(mockConn)
 
-	msgObj, _ := wire.ToMsgObject(msg)
+	msgObj, _ := msg.(*wire.MsgObject)
 	hashtest := msgObj.InventoryHash()
 
-	expObj, _ := wire.ToMsgObject(message2)
-	hashexp := expObj.InventoryHash()
+	hashexp := message2.InventoryHash()
 
 	if !hashexp.IsEqual(hashtest) {
 		t.Errorf("Wrong message sent.")

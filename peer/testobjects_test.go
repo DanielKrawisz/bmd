@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/monetas/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire"
 )
 
 // randomShaHash returns a ShaHash with a random string of bytes in it.

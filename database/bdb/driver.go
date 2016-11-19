@@ -13,9 +13,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/DanielKrawisz/bmd/database"
 	"github.com/boltdb/bolt"
 	"github.com/btcsuite/btclog"
-	"github.com/DanielKrawisz/bmd/database"
 )
 
 const (

@@ -19,6 +19,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 const (
@@ -194,7 +195,7 @@ out:
 			for _, inv := range invList {
 				msg := retrieveObject(send.db, inv)
 				if msg != nil {
-					send.dataQueue <- msg
+					send.dataQueue <- msg.MsgObject()
 				}
 			}
 		}
@@ -323,7 +324,7 @@ func NewSend(inventory *Inventory, db database.Db) Send {
 // retrieveObject retrieves an object from the database and decodes it.
 // TODO we actually end up decoding the message and then encoding it again when
 // it is sent. That is not necessary.
-func retrieveObject(db database.Db, inv *wire.InvVect) *wire.MsgObject {
+func retrieveObject(db database.Db, inv *wire.InvVect) obj.Object {
 	obj, err := db.FetchObjectByHash(&inv.Hash)
 	if err != nil {
 		return nil

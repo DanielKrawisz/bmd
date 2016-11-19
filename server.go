@@ -432,9 +432,9 @@ func (s *server) peerHandler(persistentPeers []string) {
 
 	// Add peers discovered through DNS to the address manager.
 	s.seedFromDNS()
-	
+
 	// Add persistent peers. Run in a separate goroutine so as to avoid
-	// clogging up the channel. 
+	// clogging up the channel.
 	go func(persistentPeers []string) {
 		if persistentPeers != nil {
 			for _, addr := range persistentPeers {
@@ -722,17 +722,17 @@ out:
 	s.wg.Done()
 }
 
-// newDefaultServer returns a new server with the default listener and 
-// initial nodes. 
+// newDefaultServer returns a new server with the default listener and
+// initial nodes.
 func newDefaultServer(listenAddrs []string, db database.Db) (*server, error) {
 	// Set up persistent peers.
 	var persistentPeers []string
-	if (cfg.ConnectPeers != nil && len(cfg.ConnectPeers) > 0) {
+	if cfg.ConnectPeers != nil && len(cfg.ConnectPeers) > 0 {
 		persistentPeers = cfg.ConnectPeers
 	} else {
 		persistentPeers = cfg.AddPeers
 	}
-	
+
 	return newServer(listenAddrs, db, peer.Listen, persistentPeers)
 }
 
@@ -747,8 +747,8 @@ func newServer(listenAddrs []string, db database.Db,
 	}
 
 	amgr := addrmgr.New(cfg.DataDir, bmdLookup)
-	
-	if (persistentPeers != nil) {
+
+	if persistentPeers != nil {
 		for _, node := range persistentPeers {
 			amgr.AddAddressByIP(node)
 		}
@@ -865,7 +865,7 @@ func newServer(listenAddrs []string, db database.Db,
 			return nil, errors.New("no valid listen address")
 		}
 	}
-	
+
 	s := server{
 		nonce:       nonce,
 		listeners:   listeners,
