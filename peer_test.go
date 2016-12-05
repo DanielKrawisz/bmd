@@ -28,7 +28,7 @@ import (
 // resetCfg is called to refresh configuration before every test. The returned
 // function is supposed to be called at the end of the test; to clear temp
 // directories.
-func resetCfg(cfg *config) func() {
+func resetCfg(cfg *Config) func() {
 	dir, err := ioutil.TempDir("", "bmd")
 	if err != nil {
 		panic(fmt.Sprint("Failed to create temporary directory:", err))
