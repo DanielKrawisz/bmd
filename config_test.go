@@ -13,9 +13,9 @@ import (
 )
 
 // If config files exist while we are doing
-var oldDefaultConfigFile []byte = nil
-var oldConfigFile []byte = nil
-var oldConfigFilename *string = nil
+var oldDefaultConfigFile []byte
+var oldConfigFile []byte
+var oldConfigFilename *string
 
 func setup(defaultConfigContents, configFileContents, configFilename *string) error {
 	var err error
@@ -48,9 +48,9 @@ func setup(defaultConfigContents, configFileContents, configFilename *string) er
 	// path.
 	if configFilename == nil || *configFilename == defaultConfigFile {
 		return nil
-	} else {
-		oldConfigFilename = configFilename
 	}
+
+	oldConfigFilename = configFilename
 
 	// If the file exists, save it.
 	if _, err = os.Stat(*configFilename); !os.IsNotExist(err) {
@@ -100,10 +100,10 @@ func cleanup() {
 	oldDefaultConfigFile = nil
 }
 
-func testConfig(t *testing.T, testId int, expected uint64, cmdLine *uint64, defaultConfig *uint64, config *uint64, configFile *string) {
+func testConfig(t *testing.T, testID int, expected uint64, cmdLine *uint64, defaultConfig *uint64, config *uint64, configFile *string) {
 	var defaultConfigContents *string
 	var configFileContents *string
-	var commandLine []string = make([]string, 0)
+	var commandLine []string
 
 	defer cleanup()
 
@@ -136,12 +136,12 @@ func testConfig(t *testing.T, testId int, expected uint64, cmdLine *uint64, defa
 	cfg, _, err := LoadConfig("test", commandLine)
 
 	if cfg == nil {
-		t.Errorf("Error, test id %d: nil config returned! %s", testId, err.Error())
+		t.Errorf("Error, test id %d: nil config returned! %s", testID, err.Error())
 		return
 	}
 
 	if cfg.MaxPeers != int(expected) {
-		t.Errorf("Error, test id %d: expected %d got %d.", testId, expected, cfg.MaxPeers)
+		t.Errorf("Error, test id %d: expected %d got %d.", testID, expected, cfg.MaxPeers)
 	}
 
 }
@@ -161,7 +161,7 @@ func TestLoadConfig(t *testing.T) {
 	// Test that an option is correctly set when specified
 	// in the default config file without a command line
 	// option set.
-	var cfg string = "altbmd.conf"
+	cfg := "altbmd.conf"
 	testConfig(t, 3, q, nil, &q, nil, nil)
 	testConfig(t, 4, q, nil, nil, &q, &cfg)
 

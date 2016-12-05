@@ -119,10 +119,10 @@ func (size *Filesize) UnmarshalFlag(value string) error {
 	return nil
 }
 
-// config defines the configuration options for bmd.
+// Config defines the configuration options for bmd.
 //
-// See loadConfig for details on the configuration load process.
-type config struct {
+// See LoadConfig for details on the configuration load process.
+type Config struct {
 	ShowVersion     bool          `short:"V" long:"version" description:"Display version information and exit"`
 	ConfigFile      string        `short:"C" long:"configfile" description:"Path to configuration file"`
 	DataDir         string        `short:"b" long:"datadir" description:"Directory to store data"`
@@ -346,7 +346,7 @@ func createDir(path, name string) error {
 }
 
 // newConfigParser returns a new command line flags parser.
-func newConfigParser(cfg *config, appName string, options flags.Options) *flags.Parser {
+func newConfigParser(cfg *Config, appName string, options flags.Options) *flags.Parser {
 	p := flags.NewNamedParser(appName, options)
 
 	if cfg != nil {
@@ -369,7 +369,7 @@ func newConfigParser(cfg *config, appName string, options flags.Options) *flags.
 // The above results in bmd functioning properly without any config settings
 // while still allowing the user to override settings with config files and
 // command line options. Command line options always take precedence.
-func loadConfig() (*config, []string, error) {
+func loadConfig() (*Config, []string, error) {
 
 	appName := filepath.Base(os.Args[0])
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
@@ -377,9 +377,10 @@ func loadConfig() (*config, []string, error) {
 	return LoadConfig(appName, os.Args[1:])
 }
 
-func LoadConfig(appName string, args []string) (*config, []string, error) {
+// LoadConfig creates the config type from the command-line arguments.
+func LoadConfig(appName string, args []string) (*Config, []string, error) {
 	// Default config.
-	cfg := config{
+	cfg := Config{
 		ConfigFile:      defaultConfigFile,
 		DebugLevel:      defaultLogLevel,
 		MaxPeers:        defaultMaxPeers,

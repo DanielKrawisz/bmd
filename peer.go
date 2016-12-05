@@ -15,6 +15,7 @@ import (
 	"github.com/DanielKrawisz/bmd/peer"
 )
 
+// NewConn is the function used to create new connections.
 // Can be swapped out for testing purposes.
 // TODO handle this more elegantly eventually.
 var NewConn = peer.NewConnection
