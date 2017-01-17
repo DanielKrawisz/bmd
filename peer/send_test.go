@@ -16,6 +16,7 @@ import (
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 var mockAddr net.Addr = &net.TCPAddr{IP: net.ParseIP("192.168.0.1"), Port: 8333}
@@ -134,7 +135,7 @@ func TestRequestData(t *testing.T) {
 	message := wire.NewMsgObject(wire.NewObjectHeader(345, time.Now(), wire.ObjectType(4), 1, 1), []byte{77, 82, 53, 48, 96, 1})
 
 	db.InsertObject(message)
-	hashes := []*wire.InvVect{&wire.InvVect{Hash: *message.InventoryHash()}}
+	hashes := []*wire.InvVect{(*wire.InvVect)(obj.InventoryHash(message))}
 
 	// The queue isn't running yet, so this should return an error.
 	err = queue.QueueDataRequest(hashes)
@@ -161,7 +162,7 @@ func TestRequestData(t *testing.T) {
 	// we send a regular message after and receive it.
 	badData := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0}
 	badHash, _ := wire.NewShaHash(bmutil.Sha512(badData)[:32])
-	badHashes := []*wire.InvVect{&wire.InvVect{Hash: *badHash}}
+	badHashes := []*wire.InvVect{(*wire.InvVect)(badHash)}
 	queue.QueueDataRequest(badHashes)
 
 	queue.QueueDataRequest(hashes)
@@ -200,7 +201,7 @@ func TestQueueInv(t *testing.T) {
 	queue := peer.NewSend(peer.NewInventory(), db)
 
 	// The queue isn't running yet, so this should return an error.
-	err = queue.QueueInventory([]*wire.InvVect{&wire.InvVect{Hash: *randomShaHash()}})
+	err = queue.QueueInventory([]*wire.InvVect{(*wire.InvVect)(randomShaHash())})
 	if err == nil {
 		t.Errorf("No error returned when queue is not running.")
 	}
@@ -231,7 +232,7 @@ func TestQueueInv(t *testing.T) {
 	peer.TstSendStartQueueHandler(queue, timer)
 
 	// Send an inv and try to get an inv message.
-	inv := &wire.InvVect{Hash: *randomShaHash()}
+	inv := (*wire.InvVect)(randomShaHash())
 	queue.QueueInventory([]*wire.InvVect{inv})
 	// Pause a teensy bit to ensure that the peer handler gets the message
 	// and queues it up and that there will be something to read when
@@ -259,7 +260,7 @@ func TestQueueInv(t *testing.T) {
 		invTrickleSize := 1200
 		invList := make([]*wire.InvVect, invTrickleSize)
 		for j := 0; j < invTrickleSize; j++ {
-			invList[j] = &wire.InvVect{Hash: *randomShaHash()}
+			invList[j] = (*wire.InvVect)(randomShaHash())
 		}
 		err = queue.QueueInventory(invList)
 	}
@@ -287,7 +288,7 @@ func TestQueueInv(t *testing.T) {
 		invTrickleSize := 1200
 		invList := make([]*wire.InvVect, invTrickleSize)
 		for j := 0; j < invTrickleSize; j++ {
-			invList[j] = &wire.InvVect{Hash: *randomShaHash()}
+			invList[j] = (*wire.InvVect)(randomShaHash())
 		}
 		err = queue.QueueInventory(invList)
 	}
@@ -305,19 +306,19 @@ func TestRetrieveObject(t *testing.T) {
 	db, _ := database.OpenDB("memdb")
 
 	// An object that is not in the database.
-	notThere := &wire.InvVect{Hash: *randomShaHash()}
+	notThere := (*wire.InvVect)(randomShaHash())
 
 	// A valid object that will be in the database.
 	goodData := wire.NewMsgObject(
 		wire.NewObjectHeader(345, time.Now(), wire.ObjectType(4), 1, 1),
 		[]byte{77, 82, 53, 48, 96, 1})
-	goodInv := &wire.InvVect{Hash: *goodData.InventoryHash()}
+	goodInv := (*wire.InvVect)(obj.InventoryHash(goodData))
 	db.InsertObject(goodData)
 
 	// Retrieve objects that are not in the database.
-	obj, err := peer.TstRetrieveObject(db, notThere)
+	object, err := peer.TstRetrieveObject(db, notThere)
 	if err == nil {
-		t.Error("Object returned that should not have been in the database: ", obj)
+		t.Error("Object returned that should not have been in the database: ", object)
 	}
 
 	// Retrieve good objects from the database.

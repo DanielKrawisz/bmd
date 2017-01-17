@@ -186,7 +186,7 @@ func invSummary(invList []*wire.InvVect) string {
 
 	// One inventory item.
 	if invLen == 1 {
-		return fmt.Sprintf("hash %s", invList[0].Hash)
+		return fmt.Sprintf("hash %s", invList[0])
 	}
 
 	// More than one inv item.

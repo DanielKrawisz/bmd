@@ -20,9 +20,9 @@ func TestNew(t *testing.T) {
 
 // TestMruInvMap tests Exists, Add, and Delete.
 func TestMruInvMap(t *testing.T) {
-	a := &wire.InvVect{Hash: *randomShaHash()}
-	b := &wire.InvVect{Hash: *randomShaHash()}
-	c := &wire.InvVect{Hash: *randomShaHash()}
+	a := (*wire.InvVect)(randomShaHash())
+	b := (*wire.InvVect)(randomShaHash())
+	c := (*wire.InvVect)(randomShaHash())
 
 	m := peer.NewMruInventoryMap(2)
 
@@ -58,7 +58,7 @@ func TestMruInvMap(t *testing.T) {
 
 // TestAdd0 tests an mruinvmap of size zero.
 func TestAdd0(t *testing.T) {
-	a := &wire.InvVect{Hash: *randomShaHash()}
+	a := (*wire.InvVect)(randomShaHash())
 
 	m := peer.NewMruInventoryMap(0)
 	if m.Exists(a) {
@@ -72,9 +72,9 @@ func TestAdd0(t *testing.T) {
 }
 
 func TestFilter(t *testing.T) {
-	a := &wire.InvVect{Hash: *randomShaHash()}
-	b := &wire.InvVect{Hash: *randomShaHash()}
-	c := &wire.InvVect{Hash: *randomShaHash()}
+	a := (*wire.InvVect)(randomShaHash())
+	b := (*wire.InvVect)(randomShaHash())
+	c := (*wire.InvVect)(randomShaHash())
 
 	m := peer.NewMruInventoryMap(3)
 	m.Add(a)

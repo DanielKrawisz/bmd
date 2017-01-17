@@ -356,7 +356,7 @@ func (db *BoltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 
 			if prand.Float64() < prob {
 				inv := &wire.InvVect{}
-				copy(inv.Hash[:], k)
+				copy(inv[:], k)
 
 				hashes = append(hashes, inv)
 			}
@@ -463,7 +463,7 @@ func (db *BoltDB) insertPubkey(o obj.Object) error {
 // RemoveExpiredObjects and has to be removed using RemovePubKey.
 func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 	// Check if we already have the object.
-	hash := o.InventoryHash()
+	hash := obj.InventoryHash(o)
 	exists, err := db.ExistsObject(hash)
 	if err != nil {
 		return 0, err
@@ -494,7 +494,7 @@ func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 	err = db.Update(func(tx *bolt.Tx) error {
 
 		// Insert object along with its hash.
-		err = tx.Bucket(objectsBucket).Put(o.InventoryHash()[:], b.Bytes())
+		err = tx.Bucket(objectsBucket).Put(obj.InventoryHash(o)[:], b.Bytes())
 		if err != nil {
 			return err
 		}
@@ -508,7 +508,7 @@ func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 
 		// Store counter value along with hash.
 		err = tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).
-			Put(bCounter, o.InventoryHash()[:])
+			Put(bCounter, obj.InventoryHash(o)[:])
 		if err != nil {
 			return err
 		}

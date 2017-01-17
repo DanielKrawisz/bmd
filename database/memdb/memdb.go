@@ -324,7 +324,7 @@ func (db *MemDb) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 		if counter >= count { // we have all we need
 			break
 		}
-		res = append(res, &wire.InvVect{Hash: hash})
+		res = append(res, (*wire.InvVect)(&hash))
 		counter++
 	}
 
@@ -395,7 +395,7 @@ func (db *MemDb) InsertObject(o obj.Object) (uint64, error) {
 		return 0, database.ErrDbClosed
 	}
 
-	hash := o.InventoryHash()
+	hash := obj.InventoryHash(o)
 	if _, ok := db.objectsByHash[*hash]; ok {
 		return 0, database.ErrDuplicateObject
 	}

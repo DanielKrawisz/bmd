@@ -13,6 +13,7 @@ import (
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -37,7 +38,7 @@ func (s *rpcServer) SendObject(ctx context.Context, in *pb.Object) (*pb.SendObje
 	}
 
 	// Check if object is already in database.
-	exists, err := s.server.db.ExistsObject(objMsg.InventoryHash())
+	exists, err := s.server.db.ExistsObject(obj.InventoryHash(objMsg))
 	if err != nil {
 		rpcLog.Errorf("ExistsObject, database error: %v", err)
 		return nil, grpc.Errorf(codes.Internal, "database error")

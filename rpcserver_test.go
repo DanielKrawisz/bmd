@@ -138,10 +138,10 @@ func testRPCSendObject(c pb.BmdClient, t *testing.T) {
 		t.Errorf("For counter expected %d got %d", 1, ret.Counter)
 	}
 
-	hash := testObj[0].InventoryHash()
+	hash := obj.InventoryHash(testObj[0])
 
 	// Check if advertised.
-	if ok, err := serv.objectManager.HaveInventory(wire.NewInvVect(hash)); !ok {
+	if ok, err := serv.objectManager.HaveInventory((*wire.InvVect)(hash)); !ok {
 		t.Error("server doesn't have new object in inventory, error:", err)
 	}
 

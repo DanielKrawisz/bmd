@@ -12,6 +12,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 	"github.com/DanielKrawisz/mocknet"
 )
 
@@ -58,9 +59,9 @@ func TestConnectionAndListener(t *testing.T) {
 			t.Fatalf("Error returned reading message.")
 		}
 		msgObj, _ := msg.(*wire.MsgObject)
-		hashtest := msgObj.InventoryHash()
+		hashtest := obj.InventoryHash(msgObj)
 
-		hashexp := message1.InventoryHash()
+		hashexp := obj.InventoryHash(message1)
 
 		if !hashexp.IsEqual(hashtest) {
 			t.Errorf("Wrong mock connection somehow returned?")
@@ -112,9 +113,9 @@ func TestConnectionAndListener(t *testing.T) {
 	msg := MockRead(mockConn)
 
 	msgObj, _ := msg.(*wire.MsgObject)
-	hashtest := msgObj.InventoryHash()
+	hashtest := obj.InventoryHash(msgObj)
 
-	hashexp := message2.InventoryHash()
+	hashexp := obj.InventoryHash(message2)
 
 	if !hashexp.IsEqual(hashtest) {
 		t.Errorf("Wrong message sent.")

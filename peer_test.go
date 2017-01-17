@@ -160,7 +160,7 @@ func TestOutboundPeerHandshake(t *testing.T) {
 
 	invVect := make([]*wire.InvVect, 10)
 	for i := 0; i < 10; i++ {
-		invVect[i] = &wire.InvVect{Hash: *randomShaHash()}
+		invVect[i] = (*wire.InvVect)(randomShaHash())
 	}
 	msgInv := &wire.MsgInv{InvList: invVect}
 	msgGetData := &wire.MsgGetData{InvList: invVect}
@@ -469,7 +469,7 @@ func TestProcessInvAndObjectExchange(t *testing.T) {
 
 	tooLongInvVect := make([]*wire.InvVect, wire.MaxInvPerMsg+1)
 	for i := 0; i < wire.MaxInvPerMsg+1; i++ {
-		tooLongInvVect[i] = &wire.InvVect{Hash: *randomShaHash()}
+		tooLongInvVect[i] = (*wire.InvVect)(randomShaHash())
 	}
 	TooLongInv := &wire.MsgInv{InvList: tooLongInvVect}
 

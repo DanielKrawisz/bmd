@@ -57,7 +57,7 @@ func TstSwapListen(f func(string, string) (net.Listener, error)) func(string, st
 func TstRetrieveObject(db database.Db, inv *wire.InvVect) (obj.Object, error) {
 	obj := retrieveObject(db, inv)
 	if obj == nil {
-		return nil, errors.New("retrieve object came out nil.")
+		return nil, errors.New("retrieve object came out nil")
 	}
 	return obj, nil
 }

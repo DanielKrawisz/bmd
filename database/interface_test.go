@@ -140,7 +140,7 @@ func testObject(tc *testContext) {
 				" did not get error", tc.dbType, i)
 		}
 
-		hash := msg.InventoryHash()
+		hash := obj.InventoryHash(msg)
 
 		exists, err := tc.db.ExistsObject(hash)
 		if err != nil {
@@ -153,7 +153,7 @@ func testObject(tc *testContext) {
 		}
 
 		testMsg, err := tc.db.FetchObjectByHash(hash)
-		testMsg.InventoryHash() // to make sure it's equal
+		obj.InventoryHash(testMsg) // to make sure it's equal
 
 		if err != nil {
 			tc.t.Errorf("FetchObjectByHash (%s): object #%d, got error %v",
@@ -241,7 +241,7 @@ func testCounter(tc *testContext) {
 
 		// Try to fetch an object that should be there now.
 		testMsg, err := tc.db.FetchObjectByCounter(objType, 1)
-		testMsg.InventoryHash() // to make sure it's equal
+		obj.InventoryHash(testMsg) // to make sure it's equal
 
 		if err != nil {
 			tc.t.Errorf("FetchObjectByCounter (%s): fetching object"+
@@ -266,7 +266,7 @@ func testCounter(tc *testContext) {
 
 		// Try fetching the new object.
 		testMsg, err = tc.db.FetchObjectByCounter(objType, 2)
-		testMsg.InventoryHash() // to make sure it's equal
+		obj.InventoryHash(testMsg) // to make sure it's equal
 
 		if err != nil {
 			tc.t.Errorf("FetchObjectByCounter (%s): fetching existing object"+
@@ -661,7 +661,7 @@ func testRemoveExpiredObjects(tc *testContext) {
 
 	for i, messages := range testObj {
 		for j, msg := range messages {
-			hash := msg.InventoryHash()
+			hash := obj.InventoryHash(msg)
 
 			exists, _ := tc.db.ExistsObject(hash)
 

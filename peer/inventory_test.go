@@ -21,7 +21,7 @@ func TestNewInventory(t *testing.T) {
 func TestIsAddKnown(t *testing.T) {
 	inventory := peer.NewInventory()
 
-	a := &wire.InvVect{Hash: *randomShaHash()}
+	a := (*wire.InvVect)(randomShaHash())
 
 	if inventory.IsKnown(a) {
 		t.Error("Map should be empty.")
@@ -50,9 +50,9 @@ func TestRequest(t *testing.T) {
 func TestFilterKnown(t *testing.T) {
 	inventory := peer.NewInventory()
 
-	a := &wire.InvVect{Hash: *randomShaHash()}
-	b := &wire.InvVect{Hash: *randomShaHash()}
-	c := &wire.InvVect{Hash: *randomShaHash()}
+	a := (*wire.InvVect)(randomShaHash())
+	b := (*wire.InvVect)(randomShaHash())
+	c := (*wire.InvVect)(randomShaHash())
 
 	inventory.AddKnown(a)
 

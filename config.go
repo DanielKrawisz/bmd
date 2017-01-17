@@ -36,7 +36,7 @@ const (
 	defaultBanDuration     = time.Hour * 24
 	defaultMaxRPCClients   = 25
 	defaultDbType          = "boltdb"
-	defaultPort            = 8444
+	defaultPort            = 8443
 	defaultRPCPort         = 8442
 	defaultMaxUpPerPeer    = 2 * 1024 * 1024 // 2MBps
 	defaultMaxDownPerPeer  = 2 * 1024 * 1024 // 2MBps

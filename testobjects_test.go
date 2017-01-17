@@ -147,7 +147,7 @@ func (mock *MockPeer) ReadMessage() (wire.Message, error) {
 	switch t := toSend.(type) {
 	case *wire.MsgObject:
 		mock.mutex.Lock()
-		mock.objectData = append(mock.objectData, t.InventoryHash())
+		mock.objectData = append(mock.objectData, obj.InventoryHash(t))
 		mock.mutex.Unlock()
 	}
 
@@ -751,14 +751,14 @@ func NewDataExchangePeerTester(inventory []obj.Object, peerInventory []obj.Objec
 
 	// Construct the real peer's inventory.
 	for _, message := range inventory {
-		inv := wire.InvVect{Hash: *message.InventoryHash()}
+		inv := (wire.InvVect)(*obj.InventoryHash(message))
 		invMsg.AddInvVect(&inv)
 		in[inv] = message
 	}
 
 	// Construct the mock peer's inventory.
 	for _, message := range peerInventory {
-		inv := wire.InvVect{Hash: *message.InventoryHash()}
+		inv := (wire.InvVect)(*obj.InventoryHash(message))
 		pin[inv] = struct{}{}
 	}
 

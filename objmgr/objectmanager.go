@@ -19,6 +19,7 @@ import (
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 const (
@@ -159,7 +160,8 @@ func (om *ObjectManager) handleDonePeer(p *peer.Peer) {
 
 // handleObjectMsg handles object messages from all peers.
 func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
-	invVect := wire.NewInvVect(omsg.object.InventoryHash())
+	hash := obj.InventoryHash(omsg.object)
+	invVect := (*wire.InvVect)(hash)
 
 	// Unrequested data means disconnect.
 	if rqst, exists := om.requested[*invVect]; !exists || rqst.peer != omsg.peer {
@@ -172,7 +174,7 @@ func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 		// happens it should be considered more likely to be an indication of a
 		// bug in bmd itself rather than a malicious peer.
 		log.Error(omsg.peer.Addr().String(),
-			" Disconnecting because of unrequested object ", invVect.Hash.String()[:8], " received.")
+			" Disconnecting because of unrequested object ", hash.String()[:8], " received.")
 		om.server.DisconnectPeer(omsg.peer)
 		return
 	}
@@ -187,7 +189,7 @@ func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 		return // invalid PoW
 	}
 
-	log.Debugf(omsg.peer.PrependAddr(fmt.Sprint("Object ", invVect.Hash.String()[:8],
+	log.Debugf(omsg.peer.PrependAddr(fmt.Sprint("Object ", hash.String()[:8],
 		" received; ", omsg.peer.Inventory.NumRequests(), " still assigned; ", len(om.requested), " still queued; ",
 		len(om.unknown), " unqueued; last receipt = ", now)))
 
@@ -195,17 +197,17 @@ func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 }
 
 // HandleInsert inserts a new object into the database and relays it to the peers.
-func (om *ObjectManager) HandleInsert(obj *wire.MsgObject) uint64 {
-	invVect := wire.NewInvVect(obj.InventoryHash())
+func (om *ObjectManager) HandleInsert(object *wire.MsgObject) uint64 {
+	invVect := (*wire.InvVect)(obj.InventoryHash(object))
 	// Insert object into database.
-	counter, err := om.db.InsertObject(obj)
+	counter, err := om.db.InsertObject(object)
 	if err != nil {
 		log.Errorf("failed to insert object: %v", err)
 		return 0
 	}
 
 	// Notify RPC server
-	om.server.NotifyObject(obj.Header().ObjectType)
+	om.server.NotifyObject(object.Header().ObjectType)
 
 	// Advertise objects to other peers.
 	om.relayInvList.PushBack(invVect)
@@ -217,7 +219,7 @@ func (om *ObjectManager) HandleInsert(obj *wire.MsgObject) uint64 {
 // inventory vector is known. This includes checking all of the various places
 // inventory can be.
 func (om *ObjectManager) HaveInventory(invVect *wire.InvVect) (bool, error) {
-	return om.db.ExistsObject(&invVect.Hash)
+	return om.db.ExistsObject((*wire.ShaHash)(invVect))
 }
 
 // handleInvMsg handles inv messages from all peers.
@@ -358,7 +360,7 @@ func (om *ObjectManager) handleReadyPeer(p *peer.Peer) {
 		}
 
 		if _, ok := om.requested[iv]; ok {
-			log.Error("Object ", iv.Hash.String()[:8], " is in both requested objects AND unknown objects. Should not happen!")
+			log.Error("Object ", (wire.ShaHash)(iv).String()[:8], " is in both requested objects AND unknown objects. Should not happen!")
 			delete(om.unknown, iv)
 			continue
 		}
@@ -442,7 +444,7 @@ func (om *ObjectManager) clearRequests(d time.Duration) {
 
 				if _, ok := peerDisconnect[rqst.peer]; !ok {
 					log.Debug(rqst.peer.PrependAddr(fmt.Sprint(
-						" disconnecting due to expired request for object ", hash.Hash.String()[:8], "; queue size = ",
+						" disconnecting due to expired request for object ", (wire.ShaHash)(hash).String()[:8], "; queue size = ",
 						peerQueueSize, "; last receipt =", lastReceipt, "; cond 1 =",
 						rqst.timestamp.Add(d*time.Duration(peerQueueSize)).Before(now),
 						"; cond 2 = ", lastReceipt.Add(d).Before(now))))
@@ -510,7 +512,7 @@ func (om *ObjectManager) objectHandler() {
 			}
 			for _, ex := range expired {
 
-				inv := &wire.InvVect{Hash: *ex}
+				inv := (*wire.InvVect)(ex)
 
 				for peer := range om.peers {
 					peer.Inventory.RemoveKnown(inv)
