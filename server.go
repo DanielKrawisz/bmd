@@ -196,10 +196,10 @@ func (s *server) NotifyObject(counter wire.ObjectType) {
 // handleAddPeerMsg deals with adding new peers. It is invoked from the
 // peerHandler goroutine.
 func (s *server) handleAddPeerMsg(p *peer.Peer, retries reconnectionAttempts) bool {
-	peerLog.Trace(p.PrependAddr("handleAddPeerMsg: About to add peer."))
 	if p == nil {
 		return false
 	}
+	peerLog.Trace(p.PrependAddr("handleAddPeerMsg: About to add peer."))
 
 	// Drop if the number of reconnection attempts is too high.
 	if retries > maxReconnectionAttempts {
