@@ -316,7 +316,7 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 		b.Put(nonceTrialsKey, ntb)
 		b.Put(extraBytesKey, ebb)
 		b.Put(behaviorKey, bb)
-		b.Put(signKeyKey, id.SigningKey.SerializeCompressed())
+		b.Put(signKeyKey, id.VerificationKey.SerializeCompressed())
 		b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
 
 		// Delete from encrypted pubkeys.
@@ -424,7 +424,7 @@ func (db *BoltDB) insertPubkey(o obj.Object) error {
 			b.Put(nonceTrialsKey, ntb)
 			b.Put(extraBytesKey, ebb)
 			b.Put(behaviorKey, bb)
-			b.Put(signKeyKey, id.SigningKey.SerializeCompressed())
+			b.Put(signKeyKey, id.VerificationKey.SerializeCompressed())
 			b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
 
 			return nil

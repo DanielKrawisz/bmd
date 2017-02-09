@@ -98,7 +98,7 @@ func (s *rpcServer) GetIdentity(ctx context.Context, in *pb.GetIdentityRequest) 
 	return &pb.GetIdentityReply{
 		NonceTrials:   pubID.NonceTrialsPerByte,
 		ExtraBytes:    pubID.ExtraBytes,
-		SigningKey:    pubID.SigningKey.SerializeUncompressed(),
+		SigningKey:    pubID.VerificationKey.SerializeUncompressed(),
 		EncryptionKey: pubID.EncryptionKey.SerializeUncompressed(),
 	}, nil
 }
