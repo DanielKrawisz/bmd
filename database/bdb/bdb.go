@@ -108,6 +108,22 @@ func (db *BoltDB) objectByHash(tx *bolt.Tx, hash []byte) (obj.Object, error) {
 	return o, nil
 }
 
+// headerByHash is a helper method for returning a *wire.MsgObject with the
+// given hash.
+func (db *BoltDB) headerByHash(tx *bolt.Tx, hash []byte) (*wire.ObjectHeader, error) {
+	b := tx.Bucket(objectsBucket).Get(hash)
+	if b == nil {
+		return nil, database.ErrNonexistentObject
+	}
+
+	o, err := wire.DecodeObjectHeader(bytes.NewReader(b))
+	if err != nil {
+		log.Criticalf("Decoding header with hash %v failed: %v", hash, err)
+		return nil, err
+	}
+	return o, nil
+}
+
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
 func (db *BoltDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 	var o obj.Object
@@ -335,7 +351,10 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 func (db *BoltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 	hashes := make([]*wire.InvVect, 0, count)
 
-	err := db.View(func(tx *bolt.Tx) error {
+	t := time.Now()
+	tu := t.Add(database.ExpiredCacheTime)
+
+	err := db.Update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(objectsBucket)
 		numHashes := bucket.Stats().KeyN
 
@@ -343,22 +362,53 @@ func (db *BoltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 		var prob float64
 		if uint64(numHashes) <= count {
 			prob = 1.0
+			count = uint64(numHashes)
 		} else {
 			// Multiply arbitrarily by 2, increase chances of success.
 			// TODO figure out something better
 			prob = (float64(count) / float64(numHashes)) * 2
 		}
 
-		return tx.Bucket(objectsBucket).ForEach(func(k, _ []byte) error {
+		return tx.Bucket(objectsBucket).ForEach(func(hash, v []byte) error {
 			if uint64(len(hashes)) == count {
 				return errBreakEarly
 			}
 
 			if prand.Float64() < prob {
 				inv := &wire.InvVect{}
-				copy(inv[:], k)
+				copy(inv[:], hash)
 
-				hashes = append(hashes, inv)
+				header, err := wire.DecodeObjectHeader(bytes.NewReader(v))
+				if err != nil {
+					log.Criticalf("Decoding object with hash %v failed: %v", hash, err)
+					return err
+				}
+
+				expiration := header.Expiration()
+
+				if t.Before(expiration) {
+					hashes = append(hashes, inv)
+					return nil
+				}
+
+				// Remove object from database if it is expired.
+				if tu.After(expiration) { // Expired
+
+					// Remove object from objects bucket.
+					err = tx.Bucket(objectsBucket).Delete(v)
+					if err != nil {
+						return err
+					}
+
+					// Delete object from the counters bucket.
+					cursor := tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).Cursor()
+					for k, v := cursor.First(); k != nil || v != nil; k, v = cursor.Next() {
+						if bytes.Equal(v, hash[:]) { // We found a match so delete this.
+							cursor.Delete()
+						}
+					}
+				}
+
 			}
 			return nil
 		})
@@ -590,6 +640,9 @@ func (db *BoltDB) RemoveObjectByCounter(objType wire.ObjectType, counter uint64)
 func (db *BoltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 	removedHashes := make([]*wire.ShaHash, 0, expiredSliceSize)
 
+	// Current time - 3 hours
+	t := time.Now().Add(-time.Hour * 3)
+
 	// Go through counter buckets of all the object types, checking if the
 	// corresponding objects have expired, removing and adding them to
 	// removedHashes if they have.
@@ -602,14 +655,13 @@ func (db *BoltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 
 			cursor := tx.Bucket(countersBucket).Bucket([]byte(objType.String())).Cursor()
 			for k, v := cursor.First(); k != nil || v != nil; k, v = cursor.Next() {
-				obj, err := db.objectByHash(tx, v)
+				header, err := db.headerByHash(tx, v)
 				if err != nil {
 					log.Criticalf("Failed to get %s object #%d by hash: %v",
 						objType, binary.BigEndian.Uint64(k), err)
 				}
 
-				// Current time - 3 hours
-				if time.Now().Add(-time.Hour * 3).After(obj.Header().Expiration()) { // Expired
+				if t.After(header.Expiration()) { // Expired
 
 					// Remove object from objects bucket.
 					err = tx.Bucket(objectsBucket).Delete(v)

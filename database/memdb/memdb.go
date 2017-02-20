@@ -319,13 +319,26 @@ func (db *MemDb) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 	counter := uint64(0)
 	res := make([]*wire.InvVect, 0, count)
 
+	// current time.
+	t := time.Now()
+	tu := t.Add(database.ExpiredCacheTime)
+
 	// golang ensures that iteration over maps is psuedorandom
-	for hash := range db.objectsByHash {
+	for hash, o := range db.objectsByHash {
 		if counter >= count { // we have all we need
 			break
 		}
-		res = append(res, (*wire.InvVect)(&hash))
-		counter++
+		expiration := o.Header().Expiration()
+
+		// Remove object from database if it is expired.
+		if tu.After(expiration) {
+			delete(db.objectsByHash, hash)
+		}
+
+		if t.Before(expiration) {
+			res = append(res, (*wire.InvVect)(&hash))
+			counter++
+		}
 	}
 
 	return res, nil
@@ -484,10 +497,12 @@ func (db *MemDb) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 
 	removedHashes := make([]*wire.ShaHash, 0, expiredSliceSize)
 
+	// current time - 3 hours
+	t := time.Now().Add(database.ExpiredCacheTime)
+
 	for hash, obj := range db.objectsByHash {
-		// current time - 3 hours
 		header := obj.Header()
-		if time.Now().Add(-time.Hour * 3).After(header.Expiration()) { // expired
+		if t.After(header.Expiration()) { // expired
 			// remove from counter map
 			counterMap := db.getCounter(header.ObjectType)
 

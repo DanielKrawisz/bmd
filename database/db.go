@@ -10,6 +10,7 @@ package database
 
 import (
 	"errors"
+	"time"
 
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/cipher"
@@ -17,6 +18,9 @@ import (
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
+
+// ExpiredCacheTime is how long we store expired objects, just in case.
+const ExpiredCacheTime = -time.Hour * 3
 
 // Errors that the various database functions may return.
 var (
@@ -68,9 +72,10 @@ type Db interface {
 	// of a PubKey message in the pubkey database.
 	FetchIdentityByAddress(*bmutil.Address) (*identity.Public, error)
 
-	// FetchRandomInvHashes returns the specified number of inventory hashes
-	// corresponding to random unexpired objects from the database. It does not
-	// guarantee that the number of returned inventory vectors would be `count'.
+	// FetchRandomInvHashes returns at most the specified number of
+	// inventory hashes corresponding to random unexpired objects from
+	// the database. It does not guarantee that the number of returned
+	// inventory vectors would be `count'.
 	FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error)
 
 	// GetCounter returns the highest value of counter that exists for objects
