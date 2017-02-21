@@ -78,9 +78,9 @@ type counter struct {
 	counter    uint64
 }
 
-// BoltDB is an implementation of database.Database interface with BoltDB
+// BoltDB is an implementation of database.Database interface with boltDB
 // as a backend store.
-type BoltDB struct {
+type boltDB struct {
 	*bolt.DB
 
 	// Embed a mutex for safe concurrent access.
@@ -93,11 +93,11 @@ type BoltDB struct {
 	counters map[wire.ShaHash]counter
 }
 
-// newBoltDB creates a new BoltDB
-func newBoltDB(db *bolt.DB) (*BoltDB, error) {
+// newBoltDB creates a new boltDB
+func newBoltDB(db *bolt.DB) (*boltDB, error) {
 	q := expiredQueue(make([]*expiration, 0))
 
-	bdb := BoltDB{
+	bdb := boltDB{
 		DB:         db,
 		expiration: &q,
 		counters:   make(map[wire.ShaHash]counter),
@@ -212,7 +212,7 @@ func newBoltDB(db *bolt.DB) (*BoltDB, error) {
 
 // existsObject is a helper method that returns whether or not an object
 // with the given inventory hash exists in the database.
-func (db *BoltDB) existsObject(hash *wire.ShaHash) bool {
+func (db *boltDB) existsObject(hash *wire.ShaHash) bool {
 	if _, ok := db.counters[*hash]; ok {
 		return true
 	}
@@ -222,7 +222,7 @@ func (db *BoltDB) existsObject(hash *wire.ShaHash) bool {
 
 // objectByHash is a helper method for returning a *wire.MsgObject with the
 // given hash.
-func (db *BoltDB) objectByHash(tx *bolt.Tx, hash []byte) (obj.Object, error) {
+func (db *boltDB) objectByHash(tx *bolt.Tx, hash []byte) (obj.Object, error) {
 	b := tx.Bucket(objectsBucket).Get(hash)
 	if b == nil {
 		return nil, database.ErrNonexistentObject
@@ -238,7 +238,7 @@ func (db *BoltDB) objectByHash(tx *bolt.Tx, hash []byte) (obj.Object, error) {
 
 // headerByHash is a helper method for returning a *wire.MsgObject with the
 // given hash.
-func (db *BoltDB) headerByHash(tx *bolt.Tx, hash []byte) (*wire.ObjectHeader, error) {
+func (db *boltDB) headerByHash(tx *bolt.Tx, hash []byte) (*wire.ObjectHeader, error) {
 	b := tx.Bucket(objectsBucket).Get(hash)
 	if b == nil {
 		return nil, database.ErrNonexistentObject
@@ -254,7 +254,7 @@ func (db *BoltDB) headerByHash(tx *bolt.Tx, hash []byte) (*wire.ObjectHeader, er
 
 // remove removes the object with the specified counter value
 // from the database.
-func (db *BoltDB) remove(counts []counter) error {
+func (db *boltDB) remove(counts []counter) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		for _, count := range counts {
 			bCounter := make([]byte, 8)
@@ -290,7 +290,7 @@ func (db *BoltDB) remove(counts []counter) error {
 
 // insertPubkey inserts a pubkey into the database. It's a helper method called
 // from within InsertObject.
-func (db *BoltDB) insertPubkey(o obj.Object) error {
+func (db *boltDB) insertPubkey(o obj.Object) error {
 	switch pubkeyMsg := o.(type) {
 	case *obj.SimplePubKey:
 		id, err := database.CheckPubKey(pubkeyMsg)
@@ -357,7 +357,7 @@ func (db *BoltDB) insertPubkey(o obj.Object) error {
 
 // ExistsObject returns whether or not an object with the given inventory
 // hash exists in the database.
-func (db *BoltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
+func (db *boltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -365,7 +365,7 @@ func (db *BoltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
 }
 
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
-func (db *BoltDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
+func (db *boltDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 	var o obj.Object
 	var err error
 
@@ -387,7 +387,7 @@ func (db *BoltDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 // objects being consolidated into one counter. Counters are meant for use
 // as a convenience method for fetching new data from database since last
 // check.
-func (db *BoltDB) FetchObjectByCounter(objType wire.ObjectType,
+func (db *boltDB) FetchObjectByCounter(objType wire.ObjectType,
 	counter uint64) (obj.Object, error) {
 
 	bCounter := make([]byte, 8)
@@ -420,7 +420,7 @@ func (db *BoltDB) FetchObjectByCounter(objType wire.ObjectType,
 // counter position starting from `counter'. It also returns the counter
 // value of the last object, which could be useful for more queries to the
 // function.
-func (db *BoltDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64,
+func (db *boltDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64,
 	count uint64) ([]database.ObjectWithCounter, uint64, error) {
 
 	bCounter := make([]byte, 8)
@@ -466,7 +466,7 @@ func (db *BoltDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint6
 
 // FetchIdentityByAddress returns identity.Public stored in the form
 // of a PubKey message in the pubkey database.
-func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public, error) {
+func (db *boltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public, error) {
 	address, err := addr.Encode()
 	if err != nil {
 		return nil, err
@@ -587,7 +587,7 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 
 // GetCounter returns the highest value of counter that exists for objects
 // of the given type.
-func (db *BoltDB) GetCounter(objType wire.ObjectType) (uint64, error) {
+func (db *boltDB) GetCounter(objType wire.ObjectType) (uint64, error) {
 	var counter uint64
 
 	err := db.View(func(tx *bolt.Tx) error {
@@ -609,7 +609,7 @@ func (db *BoltDB) GetCounter(objType wire.ObjectType) (uint64, error) {
 // counter position. If the object is a PubKey, it inserts it into a
 // separate place where it isn't touched by RemoveObject or
 // RemoveExpiredObjects and has to be removed using RemovePubKey.
-func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
+func (db *boltDB) InsertObject(o obj.Object) (uint64, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -689,7 +689,7 @@ func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 
 // RemoveObject removes the object with the specified hash from the
 // database. Does not remove PubKeys.
-func (db *BoltDB) RemoveObject(hash *wire.ShaHash) error {
+func (db *boltDB) RemoveObject(hash *wire.ShaHash) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -703,7 +703,7 @@ func (db *BoltDB) RemoveObject(hash *wire.ShaHash) error {
 
 // RemoveObjectByCounter removes the object with the specified counter value
 // from the database.
-func (db *BoltDB) RemoveObjectByCounter(objType wire.ObjectType, count uint64) error {
+func (db *boltDB) RemoveObjectByCounter(objType wire.ObjectType, count uint64) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -713,7 +713,7 @@ func (db *BoltDB) RemoveObjectByCounter(objType wire.ObjectType, count uint64) e
 // RemoveExpiredObjects prunes all objects in the main circulation store
 // whose expiry time has passed (along with a margin of 3 hours). This does
 // not touch the pubkeys stored in the public key collection.
-func (db *BoltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
+func (db *boltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -746,7 +746,7 @@ func (db *BoltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 // RemoveEncryptedPubKey removes a v4 PubKey with the specified tag from the
 // encrypted PubKey store. Note that it doesn't touch the general object
 // store and won't remove the public key from there.
-func (db *BoltDB) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
+func (db *boltDB) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		if tx.Bucket(encPubkeysBucket).Get(tag[:]) == nil {
 			return database.ErrNonexistentObject
@@ -759,7 +759,7 @@ func (db *BoltDB) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
 // address from the database. This includes any v2/v3/previously used v4
 // identities. Note that it doesn't touch the general object store and won't
 // remove the public key object from there.
-func (db *BoltDB) RemovePublicIdentity(addr *bmutil.Address) error {
+func (db *boltDB) RemovePublicIdentity(addr *bmutil.Address) error {
 	address, err := addr.Encode()
 	if err != nil {
 		return err
@@ -776,7 +776,7 @@ func (db *BoltDB) RemovePublicIdentity(addr *bmutil.Address) error {
 // FetchRandomInvHashes returns the specified number of inventory hashes
 // corresponding to random unexpired objects from the database. It does not
 // guarantee that the number of returned inventory vectors would be `count'.
-func (db *BoltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
+func (db *boltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 

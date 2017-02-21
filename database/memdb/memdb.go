@@ -55,10 +55,10 @@ func (cmap *counter) Insert(hash *wire.ShaHash) {
 	cmap.ByCounter[cmap.CounterPos] = hash // insert to counter map
 }
 
-// MemDb is a concrete implementation of the database.Db interface which
+// memDB is a concrete implementation of the database.Db interface which
 // provides a memory-only database. Since it is memory-only, it is obviously not
 // persistent and is mostly only useful for testing purposes.
-type MemDb struct {
+type memDB struct {
 	// Embed a mutex for safe concurrent access.
 	sync.RWMutex
 
@@ -90,7 +90,7 @@ type MemDb struct {
 
 // getCounterMap is a helper function used to get the map which maps counter to
 // object hash based on `objType'.
-func (db *MemDb) getCounter(objType wire.ObjectType) *counter {
+func (db *memDB) getCounter(objType wire.ObjectType) *counter {
 	switch objType {
 	case wire.ObjectTypeBroadcast:
 		return db.broadcastCounter
@@ -110,7 +110,7 @@ func (db *MemDb) getCounter(objType wire.ObjectType) *counter {
 //
 // All data is purged upon close with this implementation since it is a
 // memory-only database.
-func (db *MemDb) Close() error {
+func (db *memDB) Close() error {
 	db.Lock()
 	defer db.Unlock()
 
@@ -133,7 +133,7 @@ func (db *MemDb) Close() error {
 // ExistsObject returns whether or not an object with the given inventory hash
 // exists in the database. This is part of the database.Db interface
 // implementation.
-func (db *MemDb) ExistsObject(hash *wire.ShaHash) (bool, error) {
+func (db *memDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
 	db.RLock()
 	defer db.RUnlock()
 
@@ -149,7 +149,7 @@ func (db *MemDb) ExistsObject(hash *wire.ShaHash) (bool, error) {
 }
 
 // No locks here, meant to be used inside public facing functions.
-func (db *MemDb) fetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
+func (db *memDB) fetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 	if object, exists := db.objectsByHash[*hash]; exists {
 		return object, nil
 	}
@@ -158,7 +158,7 @@ func (db *MemDb) fetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 }
 
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
-func (db *MemDb) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
+func (db *memDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 	db.RLock()
 	defer db.RUnlock()
 
@@ -173,7 +173,7 @@ func (db *MemDb) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 // based on the object type and counter value. The implementation may cache the
 // underlying data if desired. This is part of the database.Db interface
 // implementation.
-func (db *MemDb) FetchObjectByCounter(objType wire.ObjectType,
+func (db *memDB) FetchObjectByCounter(objType wire.ObjectType,
 	counter uint64) (obj.Object, error) {
 	db.RLock()
 	defer db.RUnlock()
@@ -194,7 +194,7 @@ func (db *MemDb) FetchObjectByCounter(objType wire.ObjectType,
 // counter position starting from `counter'. It also returns the counter value
 // of the last object, which could be useful for more queries to the function.
 // This is part of the database.Db interface implementation.
-func (db *MemDb) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64,
+func (db *memDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64,
 	count uint64) ([]database.ObjectWithCounter, uint64, error) {
 	db.RLock()
 	defer db.RUnlock()
@@ -243,7 +243,7 @@ func (db *MemDb) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64
 // of a PubKey message in the pubkey database. It needs to go through all the
 // public keys in the database to find this. The implementation must thus cache
 // results, if needed. This is part of the database.Db interface implementation.
-func (db *MemDb) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
+func (db *memDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
 	error) {
 
 	db.RLock()
@@ -308,7 +308,7 @@ func (db *MemDb) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
 // corresponding to random unexpired objects from the database.
 //
 // This is part of the database.Db interface implementation.
-func (db *MemDb) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
+func (db *memDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 
 	db.RLock()
 	defer db.RUnlock()
@@ -346,7 +346,7 @@ func (db *MemDb) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 
 // GetCounter returns the highest value of counter that exists for objects
 // of the given type. This is part of the database.Db interface implementation.
-func (db *MemDb) GetCounter(objType wire.ObjectType) (uint64, error) {
+func (db *memDB) GetCounter(objType wire.ObjectType) (uint64, error) {
 	db.RLock()
 	defer db.RUnlock()
 	if db.closed {
@@ -359,7 +359,7 @@ func (db *MemDb) GetCounter(objType wire.ObjectType) (uint64, error) {
 
 // insertPubkey inserts a pubkey into the database. It's a helper method called
 // from within InsertObject.
-func (db *MemDb) insertPubkey(object obj.Object) error {
+func (db *memDB) insertPubkey(object obj.Object) error {
 	// If this object is a pubkey object, we need to keep it in case
 	// we can decrypt it.
 	switch pubkey := object.(type) {
@@ -401,7 +401,7 @@ func (db *MemDb) insertPubkey(object obj.Object) error {
 // is a PubKey, it inserts it into a separate place where it isn't touched
 // by RemoveObject or RemoveExpiredObjects and has to be removed using
 // RemovePubKey. This is part of the database.Db interface implementation.
-func (db *MemDb) InsertObject(o obj.Object) (uint64, error) {
+func (db *memDB) InsertObject(o obj.Object) (uint64, error) {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -434,7 +434,7 @@ func (db *MemDb) InsertObject(o obj.Object) (uint64, error) {
 
 // RemoveObject removes the object with the specified hash from the database.
 // This is part of the database.Db interface implementation.
-func (db *MemDb) RemoveObject(hash *wire.ShaHash) error {
+func (db *memDB) RemoveObject(hash *wire.ShaHash) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -464,7 +464,7 @@ func (db *MemDb) RemoveObject(hash *wire.ShaHash) error {
 
 // RemoveObjectByCounter removes the object with the specified counter value
 // from the database. This is part of the database.Db interface implementation.
-func (db *MemDb) RemoveObjectByCounter(objType wire.ObjectType,
+func (db *memDB) RemoveObjectByCounter(objType wire.ObjectType,
 	counter uint64) error {
 
 	db.Lock()
@@ -488,7 +488,7 @@ func (db *MemDb) RemoveObjectByCounter(objType wire.ObjectType,
 // whose expiry time has passed (along with a margin of 3 hours). This does
 // not touch the pubkeys stored in the public key collection. This is part of
 // the database.Db interface implementation.
-func (db *MemDb) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
+func (db *memDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -528,7 +528,7 @@ func (db *MemDb) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 // encrypted PubKey store. Note that it doesn't touch the general object store
 // and won't remove the public key from there. This is part of the database.Db
 // interface implementation.
-func (db *MemDb) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
+func (db *memDB) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -549,7 +549,7 @@ func (db *MemDb) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
 // identities. Note that it doesn't touch the general object store and won't
 // remove the public key object from there. This is part of the database.Db
 // interface implementation.
-func (db *MemDb) RemovePublicIdentity(addr *bmutil.Address) error {
+func (db *memDB) RemovePublicIdentity(addr *bmutil.Address) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -572,8 +572,8 @@ func (db *MemDb) RemovePublicIdentity(addr *bmutil.Address) error {
 }
 
 // newMemDb returns a new memory-only database ready for object insertion.
-func newMemDb() *MemDb {
-	db := MemDb{
+func newMemDb() *memDB {
+	db := memDB{
 		objectsByHash:        make(map[wire.ShaHash]obj.Object),
 		encryptedPubKeyByTag: make(map[wire.ShaHash]obj.Object),
 		pubIDByAddress:       make(map[string]*identity.Public),
