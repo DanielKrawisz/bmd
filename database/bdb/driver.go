@@ -59,70 +59,12 @@ func OpenDB(args ...interface{}) (database.Db, error) {
 		return nil, err
 	}
 
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err = tx.CreateBucketIfNotExists(objectsBucket)
-		if err != nil {
-			return err
-		}
-
-		b, err := tx.CreateBucket(countersBucket)
-		if err == nil { // Create all sub-buckets with object types.
-			for _, objType := range objTypes {
-				_, err = b.CreateBucket([]byte(objType.String()))
-				if err != nil {
-					return err
-				}
-			}
-		} else if err != bolt.ErrBucketExists {
-			return err
-		}
-
-		b, err = tx.CreateBucket(counterPosBucket)
-		if err == nil { // Initialize all the counter values.
-			zero := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-			for _, objType := range objTypes {
-				err = b.Put([]byte(objType.String()), zero)
-				if err != nil {
-					return err
-				}
-			}
-		} else if err != bolt.ErrBucketExists {
-			return err
-		}
-
-		_, err = tx.CreateBucketIfNotExists(encPubkeysBucket)
-		if err != nil {
-			return err
-		}
-
-		_, err = tx.CreateBucketIfNotExists(pubIDBucket)
-		if err != nil {
-			return err
-		}
-
-		b, err = tx.CreateBucket(miscBucket)
-		if err == nil {
-			// Set misc parameters.
-			err = b.Put(versionKey, []byte{latestDbVersion})
-			if err != nil {
-				return err
-			}
-		} else if err != bolt.ErrBucketExists {
-			return err
-		}
-
-		err = checkAndUpgrade(tx)
-		if err != nil {
-			return err
-		}
-
-		return nil
-	})
+	bdb, err := newBoltDB(db)
 	if err != nil {
 		return nil, err
 	}
 
-	return &BoltDB{DB: db}, nil
+	return bdb, nil
 }
 
 // checkAndUpgrade checks for and upgrades the database version.

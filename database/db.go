@@ -28,6 +28,7 @@ var (
 	ErrDuplicateObject   = errors.New("duplicate insert attempted")
 	ErrDbDoesNotExist    = errors.New("non-existent database")
 	ErrDbUnknownType     = errors.New("non-existent database type")
+	ErrExpired           = errors.New("object is expired.")
 	ErrNotImplemented    = errors.New("method has not yet been implemented")
 	ErrNonexistentObject = errors.New("object doesn't exist in database")
 )

@@ -7,9 +7,11 @@ package bdb
 
 import (
 	"bytes"
+	"container/heap"
 	"encoding/binary"
 	"errors"
 	prand "math/rand"
+	"sync"
 	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
@@ -26,7 +28,9 @@ import (
 const (
 	// expiredSliceSize is the initial capacity of the slice that holds hashes
 	// of expired objects returned by RemoveExpiredObjects.
-	expiredSliceSize = 50
+	expiredSliceSize = 300
+
+	objectTypeUnknown wire.ObjectType = wire.ObjectType(999)
 )
 
 // Various buckets and keys used for the database.
@@ -66,30 +70,154 @@ var (
 	errBreakEarly = errors.New("loop broken early because we have what we need")
 
 	objTypes = []wire.ObjectType{wire.ObjectTypeGetPubKey, wire.ObjectTypePubKey,
-		wire.ObjectTypeMsg, wire.ObjectTypeBroadcast, wire.ObjectType(999)}
+		wire.ObjectTypeMsg, wire.ObjectTypeBroadcast, objectTypeUnknown}
 )
+
+type counter struct {
+	ObjectType wire.ObjectType
+	counter    uint64
+}
 
 // BoltDB is an implementation of database.Database interface with BoltDB
 // as a backend store.
 type BoltDB struct {
 	*bolt.DB
+
+	// Embed a mutex for safe concurrent access.
+	mtx sync.RWMutex
+
+	// A queue used to find the expired objects in order.
+	expiration *expiredQueue
+
+	// A map of object hashes to counters.
+	counters map[wire.ShaHash]counter
 }
 
-// ExistsObject returns whether or not an object with the given inventory
-// hash exists in the database.
-func (db *BoltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
-	err := db.View(func(tx *bolt.Tx) error {
-		if tx.Bucket(objectsBucket).Get(hash[:]) == nil {
-			return database.ErrNonexistentObject
+// newBoltDB creates a new BoltDB
+func newBoltDB(db *bolt.DB) (*BoltDB, error) {
+	q := expiredQueue(make([]*expiration, 0))
+
+	bdb := BoltDB{
+		DB:         db,
+		expiration: &q,
+		counters:   make(map[wire.ShaHash]counter),
+	}
+
+	heap.Init(bdb.expiration)
+
+	// Initialize database.
+	err := db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(objectsBucket)
+		if err != nil {
+			return err
+		}
+
+		b, err := tx.CreateBucket(countersBucket)
+		if err == nil { // Create all sub-buckets with object types.
+			for _, objType := range objTypes {
+				_, err = b.CreateBucket([]byte(objType.String()))
+				if err != nil {
+					return err
+				}
+			}
+		} else if err != bolt.ErrBucketExists {
+			return err
+		}
+
+		b, err = tx.CreateBucket(counterPosBucket)
+		if err == nil { // Initialize all the counter values.
+			zero := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+			for _, objType := range objTypes {
+				err = b.Put([]byte(objType.String()), zero)
+				if err != nil {
+					return err
+				}
+			}
+		} else if err != bolt.ErrBucketExists {
+			return err
+		}
+
+		_, err = tx.CreateBucketIfNotExists(encPubkeysBucket)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.CreateBucketIfNotExists(pubIDBucket)
+		if err != nil {
+			return err
+		}
+
+		b, err = tx.CreateBucket(miscBucket)
+		if err == nil {
+			// Set misc parameters.
+			err = b.Put(versionKey, []byte{latestDbVersion})
+			if err != nil {
+				return err
+			}
+		} else if err != bolt.ErrBucketExists {
+			return err
+		}
+
+		err = checkAndUpgrade(tx)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.View(func(tx *bolt.Tx) error {
+		// Recreate the expired queue.
+		err := tx.Bucket(objectsBucket).ForEach(func(k, v []byte) error {
+			header, err := wire.DecodeObjectHeader(bytes.NewReader(v))
+			if err != nil {
+				return err
+			}
+
+			hash, _ := wire.NewShaHash(k)
+
+			// push the object onto the expired queue.
+			heap.Push(bdb.expiration, &expiration{
+				exp:  header.Expiration(),
+				hash: hash,
+			})
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		// make a map of hashes to counters.
+		countersBucket := tx.Bucket(countersBucket)
+		for _, objType := range objTypes {
+			countersBucket.Bucket([]byte(objType.String())).ForEach(func(k, v []byte) error {
+				count := binary.BigEndian.Uint64(k)
+				hash, _ := wire.NewShaHash(v)
+				bdb.counters[*hash] = counter{ObjectType: objType, counter: count}
+				return nil
+			})
 		}
 		return nil
 	})
-	if err == database.ErrNonexistentObject {
-		return false, nil
-	} else if err != nil {
-		return false, err
+	if err != nil {
+		return nil, err
 	}
-	return true, nil
+
+	return &bdb, nil
+}
+
+// existsObject is a helper method that returns whether or not an object
+// with the given inventory hash exists in the database.
+func (db *BoltDB) existsObject(hash *wire.ShaHash) bool {
+	if _, ok := db.counters[*hash]; ok {
+		return true
+	}
+
+	return false
 }
 
 // objectByHash is a helper method for returning a *wire.MsgObject with the
@@ -122,6 +250,118 @@ func (db *BoltDB) headerByHash(tx *bolt.Tx, hash []byte) (*wire.ObjectHeader, er
 		return nil, err
 	}
 	return o, nil
+}
+
+// remove removes the object with the specified counter value
+// from the database.
+func (db *BoltDB) remove(counts []counter) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		for _, count := range counts {
+			bCounter := make([]byte, 8)
+			binary.BigEndian.PutUint64(bCounter, count.counter)
+
+			bucket := tx.Bucket(countersBucket).Bucket([]byte(count.ObjectType.String()))
+			v := bucket.Get(bCounter)
+			if v == nil {
+				return database.ErrNonexistentObject
+			}
+
+			// Delete object hash.
+			err := tx.Bucket(objectsBucket).Delete(v)
+			if err != nil {
+				return err
+			}
+
+			hash, _ := wire.NewShaHash(v)
+
+			// Delete counter value.
+			err = bucket.Delete(bCounter)
+			if err != nil {
+				return err
+			}
+
+			// Remove object from index.
+			delete(db.counters, *hash)
+		}
+
+		return nil
+	})
+}
+
+// insertPubkey inserts a pubkey into the database. It's a helper method called
+// from within InsertObject.
+func (db *BoltDB) insertPubkey(o obj.Object) error {
+	switch pubkeyMsg := o.(type) {
+	case *obj.SimplePubKey:
+		id, err := database.CheckPubKey(pubkeyMsg)
+		if err != nil {
+			return err
+		}
+
+		address, err := id.Address.Encode()
+		if err != nil {
+			return err
+		}
+
+		// Now that all is well, insert it into the database.
+		return db.Update(func(tx *bolt.Tx) error {
+			b, err := tx.Bucket(pubIDBucket).CreateBucketIfNotExists([]byte(address))
+			if err != nil {
+				return err
+			}
+
+			ntb := make([]byte, 8)
+			binary.BigEndian.PutUint64(ntb, id.NonceTrialsPerByte)
+
+			ebb := make([]byte, 8)
+			binary.BigEndian.PutUint64(ebb, id.ExtraBytes)
+
+			bb := make([]byte, 4)
+			binary.BigEndian.PutUint32(bb, id.Behavior)
+
+			b.Put(nonceTrialsKey, ntb)
+			b.Put(extraBytesKey, ebb)
+			b.Put(behaviorKey, bb)
+			b.Put(signKeyKey, id.VerificationKey.SerializeCompressed())
+			b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
+
+			return nil
+		})
+
+	case *obj.ExtendedPubKey:
+		id, err := database.CheckPubKey(pubkeyMsg)
+		if err != nil {
+			return err
+		}
+
+		var b bytes.Buffer
+		pubkeyMsg.Encode(&b)
+
+		// Add it to database, along with the tag.
+		return db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket(encPubkeysBucket).Put(id.Address.Tag(), b.Bytes())
+		})
+
+	case *obj.EncryptedPubKey:
+		var b bytes.Buffer
+		pubkeyMsg.Encode(&b)
+
+		// Add it to database, along with the tag.
+		return db.Update(func(tx *bolt.Tx) error {
+			return tx.Bucket(encPubkeysBucket).Put(pubkeyMsg.Tag[:], b.Bytes())
+		})
+	}
+
+	return nil
+}
+
+// ExistsObject returns whether or not an object with the given inventory
+// hash exists in the database.
+func (db *BoltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
+	return db.existsObject(hash), nil
 }
 
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
@@ -345,81 +585,6 @@ func (db *BoltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 	return id, nil
 }
 
-// FetchRandomInvHashes returns the specified number of inventory hashes
-// corresponding to random unexpired objects from the database. It does not
-// guarantee that the number of returned inventory vectors would be `count'.
-func (db *BoltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
-	hashes := make([]*wire.InvVect, 0, count)
-
-	t := time.Now()
-	tu := t.Add(database.ExpiredCacheTime)
-
-	err := db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(objectsBucket)
-		numHashes := bucket.Stats().KeyN
-
-		// Calculate the probability so as to produce the required number.
-		var prob float64
-		if uint64(numHashes) <= count {
-			prob = 1.0
-			count = uint64(numHashes)
-		} else {
-			// Multiply arbitrarily by 2, increase chances of success.
-			// TODO figure out something better
-			prob = (float64(count) / float64(numHashes)) * 2
-		}
-
-		return tx.Bucket(objectsBucket).ForEach(func(hash, v []byte) error {
-			if uint64(len(hashes)) == count {
-				return errBreakEarly
-			}
-
-			if prand.Float64() < prob {
-				inv := &wire.InvVect{}
-				copy(inv[:], hash)
-
-				header, err := wire.DecodeObjectHeader(bytes.NewReader(v))
-				if err != nil {
-					log.Criticalf("Decoding object with hash %v failed: %v", hash, err)
-					return err
-				}
-
-				expiration := header.Expiration()
-
-				if t.Before(expiration) {
-					hashes = append(hashes, inv)
-					return nil
-				}
-
-				// Remove object from database if it is expired.
-				if tu.After(expiration) { // Expired
-
-					// Remove object from objects bucket.
-					err = tx.Bucket(objectsBucket).Delete(v)
-					if err != nil {
-						return err
-					}
-
-					// Delete object from the counters bucket.
-					cursor := tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).Cursor()
-					for k, v := cursor.First(); k != nil || v != nil; k, v = cursor.Next() {
-						if bytes.Equal(v, hash[:]) { // We found a match so delete this.
-							cursor.Delete()
-						}
-					}
-				}
-
-			}
-			return nil
-		})
-	})
-	if err != nil && err != errBreakEarly {
-		return nil, err
-	}
-
-	return hashes, nil
-}
-
 // GetCounter returns the highest value of counter that exists for objects
 // of the given type.
 func (db *BoltDB) GetCounter(objType wire.ObjectType) (uint64, error) {
@@ -440,84 +605,17 @@ func (db *BoltDB) GetCounter(objType wire.ObjectType) (uint64, error) {
 	return counter, nil
 }
 
-// insertPubkey inserts a pubkey into the database. It's a helper method called
-// from within InsertObject.
-func (db *BoltDB) insertPubkey(o obj.Object) error {
-	switch pubkeyMsg := o.(type) {
-	case *obj.SimplePubKey:
-		id, err := database.CheckPubKey(pubkeyMsg)
-		if err != nil {
-			return err
-		}
-
-		address, err := id.Address.Encode()
-		if err != nil {
-			return err
-		}
-
-		// Now that all is well, insert it into the database.
-		return db.Update(func(tx *bolt.Tx) error {
-			b, err := tx.Bucket(pubIDBucket).CreateBucketIfNotExists([]byte(address))
-			if err != nil {
-				return err
-			}
-
-			ntb := make([]byte, 8)
-			binary.BigEndian.PutUint64(ntb, id.NonceTrialsPerByte)
-
-			ebb := make([]byte, 8)
-			binary.BigEndian.PutUint64(ebb, id.ExtraBytes)
-
-			bb := make([]byte, 4)
-			binary.BigEndian.PutUint32(bb, id.Behavior)
-
-			b.Put(nonceTrialsKey, ntb)
-			b.Put(extraBytesKey, ebb)
-			b.Put(behaviorKey, bb)
-			b.Put(signKeyKey, id.VerificationKey.SerializeCompressed())
-			b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
-
-			return nil
-		})
-
-	case *obj.ExtendedPubKey:
-		id, err := database.CheckPubKey(pubkeyMsg)
-		if err != nil {
-			return err
-		}
-
-		var b bytes.Buffer
-		pubkeyMsg.Encode(&b)
-
-		// Add it to database, along with the tag.
-		return db.Update(func(tx *bolt.Tx) error {
-			return tx.Bucket(encPubkeysBucket).Put(id.Address.Tag(), b.Bytes())
-		})
-
-	case *obj.EncryptedPubKey:
-		var b bytes.Buffer
-		pubkeyMsg.Encode(&b)
-
-		// Add it to database, along with the tag.
-		return db.Update(func(tx *bolt.Tx) error {
-			return tx.Bucket(encPubkeysBucket).Put(pubkeyMsg.Tag[:], b.Bytes())
-		})
-	}
-
-	return nil
-}
-
 // InsertObject inserts the given object into the database and returns the
 // counter position. If the object is a PubKey, it inserts it into a
 // separate place where it isn't touched by RemoveObject or
 // RemoveExpiredObjects and has to be removed using RemovePubKey.
 func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
 	// Check if we already have the object.
 	hash := obj.InventoryHash(o)
-	exists, err := db.ExistsObject(hash)
-	if err != nil {
-		return 0, err
-	}
+	exists := db.existsObject(hash)
 	if exists {
 		return 0, database.ErrDuplicateObject
 	}
@@ -525,18 +623,25 @@ func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 	object, _ := obj.ReadObject(wire.Encode(o))
 
 	header := o.Header()
-	// Insert into pubkey bucket if it is a pubkeys.
+
+	// Don't insert an object if it is already expired.
+	now := time.Now()
+	if now.Add(database.ExpiredCacheTime).After(header.Expiration()) {
+		return 0, database.ErrExpired
+	}
+
+	// Insert into pubkey bucket if it is a pubkey.
 	if header.ObjectType == wire.ObjectTypePubKey {
-		err = db.insertPubkey(object)
+		err := db.insertPubkey(object)
 		if err != nil {
 			log.Infof("Failed to insert pubkey: %v", err)
 		}
 		// We don't care much about error. Ignore it.
 	}
 
-	var counter uint64
+	var count uint64
 	var b bytes.Buffer
-	err = o.Encode(&b)
+	err := o.Encode(&b)
 	if err != nil {
 		return 0, err
 	}
@@ -551,10 +656,10 @@ func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 
 		// Get latest counter value.
 		v := tx.Bucket(counterPosBucket).Get([]byte(header.ObjectType.String()))
-		counter = binary.BigEndian.Uint64(v) + 1
+		count = binary.BigEndian.Uint64(v) + 1
 
 		bCounter := make([]byte, 8)
-		binary.BigEndian.PutUint64(bCounter, counter)
+		binary.BigEndian.PutUint64(bCounter, count)
 
 		// Store counter value along with hash.
 		err = tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).
@@ -571,123 +676,71 @@ func (db *BoltDB) InsertObject(o obj.Object) (uint64, error) {
 		return 0, err
 	}
 
-	return counter, err
+	objectType := header.ObjectType
+	if objectType > wire.HighestKnownObjectType {
+		objectType = objectTypeUnknown
+	}
+	db.counters[*hash] = counter{counter: count, ObjectType: objectType}
+
+	heap.Push(db.expiration, &expiration{exp: header.Expiration(), hash: hash})
+
+	return count, err
 }
 
 // RemoveObject removes the object with the specified hash from the
 // database. Does not remove PubKeys.
 func (db *BoltDB) RemoveObject(hash *wire.ShaHash) error {
-	return db.Update(func(tx *bolt.Tx) error {
-		obj := tx.Bucket(objectsBucket).Get(hash[:])
-		if obj == nil {
-			return database.ErrNonexistentObject
-		}
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
-		// Get the object type.
-		header, err := wire.DecodeObjectHeader(bytes.NewReader(obj))
-		if err != nil {
-			log.Criticalf("Failed to decode object with hash %s: %v", hash, err)
-			return err
-		}
+	count, ok := db.counters[*hash]
+	if !ok {
+		return database.ErrNonexistentObject
+	}
 
-		// Delete object.
-		err = tx.Bucket(objectsBucket).Delete(hash[:])
-		if err != nil {
-			return err
-		}
-
-		// Delete object from the counters bucket.
-		cursor := tx.Bucket(countersBucket).Bucket([]byte(header.ObjectType.String())).Cursor()
-		for k, v := cursor.First(); k != nil || v != nil; k, v = cursor.Next() {
-			if bytes.Equal(v, hash[:]) { // We found a match so delete this.
-				return cursor.Delete()
-			}
-		}
-
-		log.Criticalf("Didn't find object with inv. hash %s in counter bucket!",
-			hash)
-		return errors.New("Critical error. Check logs.")
-	})
+	return db.remove([]counter{count})
 }
 
 // RemoveObjectByCounter removes the object with the specified counter value
 // from the database.
-func (db *BoltDB) RemoveObjectByCounter(objType wire.ObjectType, counter uint64) error {
-	bCounter := make([]byte, 8)
-	binary.BigEndian.PutUint64(bCounter, counter)
+func (db *BoltDB) RemoveObjectByCounter(objType wire.ObjectType, count uint64) error {
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
-	return db.Update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(countersBucket).Bucket([]byte(objType.String()))
-		hash := bucket.Get(bCounter)
-		if hash == nil {
-			return database.ErrNonexistentObject
-		}
-
-		// Delete object hash.
-		err := tx.Bucket(objectsBucket).Delete(hash)
-		if err != nil {
-			return err
-		}
-
-		// Delete counter value.
-		return bucket.Delete(bCounter)
-	})
+	return db.remove([]counter{counter{ObjectType: objType, counter: count}})
 }
 
 // RemoveExpiredObjects prunes all objects in the main circulation store
 // whose expiry time has passed (along with a margin of 3 hours). This does
 // not touch the pubkeys stored in the public key collection.
 func (db *BoltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
-	removedHashes := make([]*wire.ShaHash, 0, expiredSliceSize)
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
 	// Current time - 3 hours
-	t := time.Now().Add(-time.Hour * 3)
+	t := time.Now().Add(database.ExpiredCacheTime)
 
-	// Go through counter buckets of all the object types, checking if the
-	// corresponding objects have expired, removing and adding them to
-	// removedHashes if they have.
-	//
-	// The downside of going through the object hashes is that the complexity
-	// rises to O(n^2) instead of O(n log n) because counter values of the
-	// objects also have to be found (which can only be done in linear time).
-	err := db.Update(func(tx *bolt.Tx) error {
-		for _, objType := range objTypes {
+	remove := make([]*wire.ShaHash, 0, expiredSliceSize)
 
-			cursor := tx.Bucket(countersBucket).Bucket([]byte(objType.String())).Cursor()
-			for k, v := cursor.First(); k != nil || v != nil; k, v = cursor.Next() {
-				header, err := db.headerByHash(tx, v)
-				if err != nil {
-					log.Criticalf("Failed to get %s object #%d by hash: %v",
-						objType, binary.BigEndian.Uint64(k), err)
-				}
+	for {
+		last := db.expiration.Peek()
 
-				if t.After(header.Expiration()) { // Expired
-
-					// Remove object from objects bucket.
-					err = tx.Bucket(objectsBucket).Delete(v)
-					if err != nil {
-						return err
-					}
-
-					// Remove from counters bucket.
-					err = cursor.Delete()
-					if err != nil {
-						return err
-					}
-
-					// Add to the list of removed hashes.
-					hash, _ := wire.NewShaHash(v)
-					removedHashes = append(removedHashes, hash)
-				}
-			}
+		if last == nil || t.Before(last.exp) {
+			break
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
+
+		remove = append(remove, last.hash)
+
+		heap.Pop(db.expiration)
 	}
 
-	return removedHashes, nil
+	counts := make([]counter, 0, len(remove))
+
+	for _, hash := range remove {
+		counts = append(counts, db.counters[*hash])
+	}
+
+	return remove, db.remove(counts)
 }
 
 // RemoveEncryptedPubKey removes a v4 PubKey with the specified tag from the
@@ -718,6 +771,38 @@ func (db *BoltDB) RemovePublicIdentity(addr *bmutil.Address) error {
 		}
 		return tx.Bucket(pubIDBucket).DeleteBucket([]byte(address))
 	})
+}
+
+// FetchRandomInvHashes returns the specified number of inventory hashes
+// corresponding to random unexpired objects from the database. It does not
+// guarantee that the number of returned inventory vectors would be `count'.
+func (db *BoltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
+
+	hashes := make([]*wire.InvVect, 0, count)
+	now := time.Now()
+	randomizer := make(map[*wire.ShaHash]struct{})
+
+	for _, ex := range *db.expiration {
+		if now.Before(ex.exp) {
+			randomizer[ex.hash] = struct{}{}
+		}
+	}
+
+	i := uint64(0)
+	// go ensures that the iteration order is random.
+	for hash := range randomizer {
+		inv := &wire.InvVect{}
+		copy(inv[:], (*hash)[:])
+		hashes = append(hashes, inv)
+		i++
+		if i > count {
+			break
+		}
+	}
+
+	return hashes, nil
 }
 
 func init() {
