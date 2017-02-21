@@ -1,31 +1,41 @@
 package: github.com/DanielKrawisz/bmd
 import:
 - package: github.com/DanielKrawisz/bmutil
+  version: 286ebbd1c8effd16dafd443779ccf63789dd23fe
   subpackages:
   - cipher
   - identity
   - pow
   - wire
+  - wire/obj
 - package: github.com/DanielKrawisz/maxrate
 - package: github.com/boltdb/bolt
+  version: ~1.3.0
 - package: github.com/btcsuite/btcd
+  repo: git@github.com:btcsuite/btcd.git
   subpackages:
   - btcec
 - package: github.com/btcsuite/btclog
 - package: github.com/btcsuite/btcutil
+  repo: git@github.com:btcsuite/btcutil.git
 - package: github.com/btcsuite/go-socks
   subpackages:
   - socks
 - package: github.com/btcsuite/seelog
+  version: ~2.1.0
 - package: github.com/golang/protobuf
   subpackages:
   - proto
 - package: github.com/jessevdk/go-flags
+  version: ~1.2.0
 - package: golang.org/x/net
   subpackages:
   - context
 - package: google.golang.org/grpc
+  version: ~1.0.5
   subpackages:
   - codes
   - credentials
   - metadata
+testImport:
+- package: github.com/DanielKrawisz/mocknet
