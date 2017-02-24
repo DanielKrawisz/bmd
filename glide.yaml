@@ -1,7 +1,7 @@
 package: github.com/DanielKrawisz/bmd
 import:
 - package: github.com/DanielKrawisz/bmutil
-  version: 286ebbd1c8effd16dafd443779ccf63789dd23fe
+  version: 5fd133f7798f9c991238c4be42362883cb001851
   subpackages:
   - cipher
   - identity

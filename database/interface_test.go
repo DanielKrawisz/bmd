@@ -17,6 +17,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
@@ -68,19 +69,19 @@ var pubkey = []wire.PubKey{
 		166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181}),
 }
 
-var shahash = []wire.ShaHash{
-	wire.ShaHash([wire.HashSize]byte{
+var shahash = []hash.Sha{
+	hash.Sha([hash.ShaSize]byte{
 		98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113,
 		114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129}),
-	wire.ShaHash([wire.HashSize]byte{
+	hash.Sha([hash.ShaSize]byte{
 		100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
 		116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131}),
 }
 
-var ripehash = []wire.RipeHash{
-	wire.RipeHash([wire.RipeHashSize]byte{
+var ripehash = []hash.Ripe{
+	hash.Ripe([hash.RipeSize]byte{
 		78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97}),
-	wire.RipeHash([wire.RipeHashSize]byte{
+	hash.Ripe([hash.RipeSize]byte{
 		80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99}),
 }
 
@@ -444,7 +445,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test RemoveEncryptedPubKey for an address that does not exist
-	tag, _ := wire.NewShaHash(addr.Tag())
+	tag, _ := hash.NewSha(addr.Tag())
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err == nil {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): expected error got none",
@@ -545,7 +546,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// Test whether RemoveEncryptedPubKey fails for a decrypted key.
-	tag, _ = wire.NewShaHash(idV4.Tag())
+	tag, _ = hash.NewSha(idV4.Tag())
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err != database.ErrNonexistentObject {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): expected nonexistent object"+
@@ -563,7 +564,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("InsertObject (%s): got error %v", tc.dbType, err)
 	}
-	tag, _ = wire.NewShaHash(msg.Payload()[:32])
+	tag, _ = hash.NewSha(msg.Payload()[:32])
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err != nil {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): got error %v", tc.dbType, err)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/cipher"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/identity"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
@@ -50,10 +51,10 @@ type Db interface {
 
 	// ExistsObject returns whether or not an object with the given inventory
 	// hash exists in the database.
-	ExistsObject(*wire.ShaHash) (bool, error)
+	ExistsObject(*hash.Sha) (bool, error)
 
 	// FetchObjectByHash returns an object from the database as a wire.MsgObject.
-	FetchObjectByHash(*wire.ShaHash) (obj.Object, error)
+	FetchObjectByHash(*hash.Sha) (obj.Object, error)
 
 	// FetchObjectByCounter returns the corresponding object based on the
 	// counter. Note that each object type has a different counter, with unknown
@@ -91,7 +92,7 @@ type Db interface {
 
 	// RemoveObject removes the object with the specified hash from the
 	// database. Does not remove PubKeys.
-	RemoveObject(*wire.ShaHash) error
+	RemoveObject(*hash.Sha) error
 
 	// RemoveObjectByCounter removes the object with the specified counter value
 	// from the database.
@@ -100,12 +101,12 @@ type Db interface {
 	// RemoveExpiredObjects prunes all objects in the main circulation store
 	// whose expiry time has passed (along with a margin of 3 hours). This does
 	// not touch the pubkeys stored in the public key collection.
-	RemoveExpiredObjects() ([]*wire.ShaHash, error)
+	RemoveExpiredObjects() ([]*hash.Sha, error)
 
 	// RemoveEncryptedPubKey removes a v4 PubKey with the specified tag from the
 	// encrypted PubKey store. Note that it doesn't touch the general object
 	// store and won't remove the public key from there.
-	RemoveEncryptedPubKey(*wire.ShaHash) error
+	RemoveEncryptedPubKey(*hash.Sha) error
 
 	// RemovePublicIdentity removes the public identity corresponding the given
 	// address from the database. This includes any v2/v3/previously used v4

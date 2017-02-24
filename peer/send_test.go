@@ -14,7 +14,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
 	"github.com/DanielKrawisz/bmd/peer"
-	"github.com/DanielKrawisz/bmutil"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
@@ -161,7 +161,7 @@ func TestRequestData(t *testing.T) {
 	// for code coverage. In order to ensure that the queue behaves correctly,
 	// we send a regular message after and receive it.
 	badData := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0}
-	badHash, _ := wire.NewShaHash(bmutil.Sha512(badData)[:32])
+	badHash, _ := hash.NewSha(hash.Sha512(badData)[:32])
 	badHashes := []*wire.InvVect{(*wire.InvVect)(badHash)}
 	queue.QueueDataRequest(badHashes)
 

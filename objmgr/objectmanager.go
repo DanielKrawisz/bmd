@@ -17,6 +17,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
@@ -219,7 +220,7 @@ func (om *ObjectManager) HandleInsert(object *wire.MsgObject) uint64 {
 // inventory vector is known. This includes checking all of the various places
 // inventory can be.
 func (om *ObjectManager) HaveInventory(invVect *wire.InvVect) (bool, error) {
-	return om.db.ExistsObject((*wire.ShaHash)(invVect))
+	return om.db.ExistsObject((*hash.Sha)(invVect))
 }
 
 // handleInvMsg handles inv messages from all peers.
@@ -360,7 +361,7 @@ func (om *ObjectManager) handleReadyPeer(p *peer.Peer) {
 		}
 
 		if _, ok := om.requested[iv]; ok {
-			log.Error("Object ", (wire.ShaHash)(iv).String()[:8], " is in both requested objects AND unknown objects. Should not happen!")
+			log.Error("Object ", (hash.Sha)(iv).String()[:8], " is in both requested objects AND unknown objects. Should not happen!")
 			delete(om.unknown, iv)
 			continue
 		}
@@ -421,7 +422,7 @@ func (om *ObjectManager) clearRequests(d time.Duration) {
 	// to disconnect a peer more than once. Otherwise a channel could be locked
 	// up if many requests from the same peer timed out at once.
 	peerDisconnect := make(map[*peer.Peer]struct{})
-	for hash, rqst := range om.requested {
+	for h, rqst := range om.requested {
 		// if request has expired
 		if rqst.timestamp.Add(d).Before(now) {
 			peerQueueSize := rqst.peer.Inventory.NumRequests()
@@ -438,13 +439,14 @@ func (om *ObjectManager) clearRequests(d time.Duration) {
 				// may have just expired. Therefore, drop the request without
 				// penalizing the peer.
 				if rqst.knownSince.Add(unsentObjectPenaltyTimeout).Before(rqst.timestamp) {
-					delete(om.requested, hash)
+					delete(om.requested, h)
 					continue
 				}
 
 				if _, ok := peerDisconnect[rqst.peer]; !ok {
 					log.Debug(rqst.peer.PrependAddr(fmt.Sprint(
-						" disconnecting due to expired request for object ", (wire.ShaHash)(hash).String()[:8], "; queue size = ",
+						" disconnecting due to expired request for object ",
+						(hash.Sha)(h).String()[:8], "; queue size = ",
 						peerQueueSize, "; last receipt =", lastReceipt, "; cond 1 =",
 						rqst.timestamp.Add(d*time.Duration(peerQueueSize)).Before(now),
 						"; cond 2 = ", lastReceipt.Add(d).Before(now))))

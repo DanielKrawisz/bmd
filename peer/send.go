@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
@@ -325,7 +326,7 @@ func NewSend(inventory *Inventory, db database.Db) Send {
 // TODO we actually end up decoding the message and then encoding it again when
 // it is sent. That is not necessary.
 func retrieveObject(db database.Db, inv *wire.InvVect) obj.Object {
-	obj, err := db.FetchObjectByHash((*wire.ShaHash)(inv))
+	obj, err := db.FetchObjectByHash((*hash.Sha)(inv))
 	if err != nil {
 		return nil
 	}

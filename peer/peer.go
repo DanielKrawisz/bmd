@@ -17,6 +17,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/addrmgr"
 	"github.com/DanielKrawisz/bmd/database"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 )
 
@@ -350,7 +351,7 @@ func (p *Peer) PushInvMsg(invVect []*wire.InvVect) {
 
 // PushObjectMsg sends an object message for the provided object hash to the
 // connected peer.  An error is returned if the object hash is not known.
-func (p *Peer) PushObjectMsg(sha *wire.ShaHash) {
+func (p *Peer) PushObjectMsg(sha *hash.Sha) {
 	obj, err := p.server.Db().FetchObjectByHash(sha)
 	if err != nil {
 		return

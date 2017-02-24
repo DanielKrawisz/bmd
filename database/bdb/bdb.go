@@ -17,6 +17,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/cipher"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/identity"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
@@ -90,7 +91,7 @@ type boltDB struct {
 	expiration *expiredQueue
 
 	// A map of object hashes to counters.
-	counters map[wire.ShaHash]counter
+	counters map[hash.Sha]counter
 }
 
 // newBoltDB creates a new boltDB
@@ -100,7 +101,7 @@ func newBoltDB(db *bolt.DB) (*boltDB, error) {
 	bdb := boltDB{
 		DB:         db,
 		expiration: &q,
-		counters:   make(map[wire.ShaHash]counter),
+		counters:   make(map[hash.Sha]counter),
 	}
 
 	heap.Init(bdb.expiration)
@@ -177,7 +178,7 @@ func newBoltDB(db *bolt.DB) (*boltDB, error) {
 				return err
 			}
 
-			hash, _ := wire.NewShaHash(k)
+			hash, _ := hash.NewSha(k)
 
 			// push the object onto the expired queue.
 			heap.Push(bdb.expiration, &expiration{
@@ -196,7 +197,7 @@ func newBoltDB(db *bolt.DB) (*boltDB, error) {
 		for _, objType := range objTypes {
 			countersBucket.Bucket([]byte(objType.String())).ForEach(func(k, v []byte) error {
 				count := binary.BigEndian.Uint64(k)
-				hash, _ := wire.NewShaHash(v)
+				hash, _ := hash.NewSha(v)
 				bdb.counters[*hash] = counter{ObjectType: objType, counter: count}
 				return nil
 			})
@@ -212,7 +213,7 @@ func newBoltDB(db *bolt.DB) (*boltDB, error) {
 
 // existsObject is a helper method that returns whether or not an object
 // with the given inventory hash exists in the database.
-func (db *boltDB) existsObject(hash *wire.ShaHash) bool {
+func (db *boltDB) existsObject(hash *hash.Sha) bool {
 	if _, ok := db.counters[*hash]; ok {
 		return true
 	}
@@ -272,7 +273,7 @@ func (db *boltDB) remove(counts []counter) error {
 				return err
 			}
 
-			hash, _ := wire.NewShaHash(v)
+			hash, _ := hash.NewSha(v)
 
 			// Delete counter value.
 			err = bucket.Delete(bCounter)
@@ -357,7 +358,7 @@ func (db *boltDB) insertPubkey(o obj.Object) error {
 
 // ExistsObject returns whether or not an object with the given inventory
 // hash exists in the database.
-func (db *boltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
+func (db *boltDB) ExistsObject(hash *hash.Sha) (bool, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -365,7 +366,7 @@ func (db *boltDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
 }
 
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
-func (db *boltDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
+func (db *boltDB) FetchObjectByHash(hash *hash.Sha) (obj.Object, error) {
 	var o obj.Object
 	var err error
 
@@ -689,7 +690,7 @@ func (db *boltDB) InsertObject(o obj.Object) (uint64, error) {
 
 // RemoveObject removes the object with the specified hash from the
 // database. Does not remove PubKeys.
-func (db *boltDB) RemoveObject(hash *wire.ShaHash) error {
+func (db *boltDB) RemoveObject(hash *hash.Sha) error {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
@@ -713,14 +714,14 @@ func (db *boltDB) RemoveObjectByCounter(objType wire.ObjectType, count uint64) e
 // RemoveExpiredObjects prunes all objects in the main circulation store
 // whose expiry time has passed (along with a margin of 3 hours). This does
 // not touch the pubkeys stored in the public key collection.
-func (db *boltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
+func (db *boltDB) RemoveExpiredObjects() ([]*hash.Sha, error) {
 	db.mtx.Lock()
 	defer db.mtx.Unlock()
 
 	// Current time - 3 hours
 	t := time.Now().Add(database.ExpiredCacheTime)
 
-	remove := make([]*wire.ShaHash, 0, expiredSliceSize)
+	remove := make([]*hash.Sha, 0, expiredSliceSize)
 
 	for {
 		last := db.expiration.Peek()
@@ -746,7 +747,7 @@ func (db *boltDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 // RemoveEncryptedPubKey removes a v4 PubKey with the specified tag from the
 // encrypted PubKey store. Note that it doesn't touch the general object
 // store and won't remove the public key from there.
-func (db *boltDB) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
+func (db *boltDB) RemoveEncryptedPubKey(tag *hash.Sha) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		if tx.Bucket(encPubkeysBucket).Get(tag[:]) == nil {
 			return database.ErrNonexistentObject
@@ -782,7 +783,7 @@ func (db *boltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 
 	hashes := make([]*wire.InvVect, 0, count)
 	now := time.Now()
-	randomizer := make(map[*wire.ShaHash]struct{})
+	randomizer := make(map[*hash.Sha]struct{})
 
 	for _, ex := range *db.expiration {
 		if now.Before(ex.exp) {

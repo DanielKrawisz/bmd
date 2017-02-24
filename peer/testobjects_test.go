@@ -12,16 +12,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 )
 
 // randomShaHash returns a ShaHash with a random string of bytes in it.
-func randomShaHash() *wire.ShaHash {
+func randomShaHash() *hash.Sha {
 	b := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		b[i] = byte(rand.Intn(256))
 	}
-	hash, _ := wire.NewShaHash(b)
+	hash, _ := hash.NewSha(b)
 	return hash
 }
 

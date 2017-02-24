@@ -9,17 +9,18 @@ import (
 	"time"
 
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
 
 // randomShaHash returns a ShaHash with a random string of bytes in it.
-func randomShaHash() *wire.ShaHash {
+func randomShaHash() *hash.Sha {
 	b := make([]byte, 32)
 	for i := 0; i < 32; i++ {
 		b[i] = byte(rand.Intn(256))
 	}
-	hash, _ := wire.NewShaHash(b)
+	hash, _ := hash.NewSha(b)
 	return hash
 }
 
@@ -80,7 +81,7 @@ func MockListen(listeners []*MockListener) func(string, string) (peer.Listener, 
 // The report also includes any object messages that were sent to the peer.
 type TestReport struct {
 	Err      error
-	DataSent []*wire.ShaHash
+	DataSent []*hash.Sha
 }
 
 // MockPeer implements the peer.Connection interface and
@@ -97,7 +98,7 @@ type MockPeer struct {
 	peerTest PeerTest
 
 	// A list of hashes of objects that have been sent to the real peer.
-	objectData []*wire.ShaHash
+	objectData []*hash.Sha
 
 	// A queue of messages to be received by the real peer.
 	msgQueue []wire.Message
@@ -329,7 +330,7 @@ func NewMockPeer(localAddr, remoteAddr net.Addr, report chan TestReport, peerTes
 		interactionComplete: false,
 		disconnectExpected:  false,
 		reply:               make(chan []wire.Message),
-		objectData:          make([]*wire.ShaHash, 0),
+		objectData:          make([]*hash.Sha, 0),
 	}
 
 	mock.mutex.Lock()

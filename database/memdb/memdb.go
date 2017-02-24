@@ -16,6 +16,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/cipher"
+	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/identity"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
@@ -45,12 +46,12 @@ func (c counters) Swap(i, j int) {
 // element added.
 type counter struct {
 	// Holds a mapping from counter to shahash for some object types.
-	ByCounter map[uint64]*wire.ShaHash
+	ByCounter map[uint64]*hash.Sha
 	// Keep track of current counter positions (last element added)
 	CounterPos uint64
 }
 
-func (cmap *counter) Insert(hash *wire.ShaHash) {
+func (cmap *counter) Insert(hash *hash.Sha) {
 	cmap.CounterPos++                      // increment, new item.
 	cmap.ByCounter[cmap.CounterPos] = hash // insert to counter map
 }
@@ -63,12 +64,12 @@ type memDB struct {
 	sync.RWMutex
 
 	// objectsByHash keeps track of unexpired objects by their inventory hash.
-	objectsByHash map[wire.ShaHash]obj.Object
+	objectsByHash map[hash.Sha]obj.Object
 
 	// encryptedPubkeyByTag keeps track of all encrypted public keys (even
 	// expired) by their tag (which is embedded in the message). When pubkeys
 	// are decrypted, they are removed from here and put in pubIDByAddress.
-	encryptedPubKeyByTag map[wire.ShaHash]obj.Object
+	encryptedPubKeyByTag map[hash.Sha]obj.Object
 
 	// pubIDByAddress keeps track of all v2/v3 and previously decrypted v4
 	// public keys converted into Public identity structs.
@@ -133,7 +134,7 @@ func (db *memDB) Close() error {
 // ExistsObject returns whether or not an object with the given inventory hash
 // exists in the database. This is part of the database.Db interface
 // implementation.
-func (db *memDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
+func (db *memDB) ExistsObject(hash *hash.Sha) (bool, error) {
 	db.RLock()
 	defer db.RUnlock()
 
@@ -149,7 +150,7 @@ func (db *memDB) ExistsObject(hash *wire.ShaHash) (bool, error) {
 }
 
 // No locks here, meant to be used inside public facing functions.
-func (db *memDB) fetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
+func (db *memDB) fetchObjectByHash(hash *hash.Sha) (obj.Object, error) {
 	if object, exists := db.objectsByHash[*hash]; exists {
 		return object, nil
 	}
@@ -158,7 +159,7 @@ func (db *memDB) fetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
 }
 
 // FetchObjectByHash returns an object from the database as a wire.MsgObject.
-func (db *memDB) FetchObjectByHash(hash *wire.ShaHash) (obj.Object, error) {
+func (db *memDB) FetchObjectByHash(hash *hash.Sha) (obj.Object, error) {
 	db.RLock()
 	defer db.RUnlock()
 
@@ -275,7 +276,7 @@ func (db *memDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
 	}
 
 	// Try finding the public key with the required tag and then decrypting it.
-	var tag wire.ShaHash
+	var tag hash.Sha
 	copy(tag[:], addr.Tag())
 
 	// Find pubkey to decrypt.
@@ -382,7 +383,7 @@ func (db *memDB) insertPubkey(object obj.Object) error {
 			return err
 		}
 
-		var tag wire.ShaHash
+		var tag hash.Sha
 		copy(tag[:], id.Address.Tag())
 
 		// Add message to database.
@@ -434,7 +435,7 @@ func (db *memDB) InsertObject(o obj.Object) (uint64, error) {
 
 // RemoveObject removes the object with the specified hash from the database.
 // This is part of the database.Db interface implementation.
-func (db *memDB) RemoveObject(hash *wire.ShaHash) error {
+func (db *memDB) RemoveObject(hash *hash.Sha) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -488,14 +489,14 @@ func (db *memDB) RemoveObjectByCounter(objType wire.ObjectType,
 // whose expiry time has passed (along with a margin of 3 hours). This does
 // not touch the pubkeys stored in the public key collection. This is part of
 // the database.Db interface implementation.
-func (db *memDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
+func (db *memDB) RemoveExpiredObjects() ([]*hash.Sha, error) {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
 		return nil, database.ErrDbClosed
 	}
 
-	removedHashes := make([]*wire.ShaHash, 0, expiredSliceSize)
+	removedHashes := make([]*hash.Sha, 0, expiredSliceSize)
 
 	// current time - 3 hours
 	t := time.Now().Add(database.ExpiredCacheTime)
@@ -528,7 +529,7 @@ func (db *memDB) RemoveExpiredObjects() ([]*wire.ShaHash, error) {
 // encrypted PubKey store. Note that it doesn't touch the general object store
 // and won't remove the public key from there. This is part of the database.Db
 // interface implementation.
-func (db *memDB) RemoveEncryptedPubKey(tag *wire.ShaHash) error {
+func (db *memDB) RemoveEncryptedPubKey(tag *hash.Sha) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -574,14 +575,14 @@ func (db *memDB) RemovePublicIdentity(addr *bmutil.Address) error {
 // newMemDb returns a new memory-only database ready for object insertion.
 func newMemDb() *memDB {
 	db := memDB{
-		objectsByHash:        make(map[wire.ShaHash]obj.Object),
-		encryptedPubKeyByTag: make(map[wire.ShaHash]obj.Object),
+		objectsByHash:        make(map[hash.Sha]obj.Object),
+		encryptedPubKeyByTag: make(map[hash.Sha]obj.Object),
 		pubIDByAddress:       make(map[string]*identity.Public),
-		msgCounter:           &counter{make(map[uint64]*wire.ShaHash), 0},
-		broadcastCounter:     &counter{make(map[uint64]*wire.ShaHash), 0},
-		pubKeyCounter:        &counter{make(map[uint64]*wire.ShaHash), 0},
-		getPubKeyCounter:     &counter{make(map[uint64]*wire.ShaHash), 0},
-		unknownObjCounter:    &counter{make(map[uint64]*wire.ShaHash), 0},
+		msgCounter:           &counter{make(map[uint64]*hash.Sha), 0},
+		broadcastCounter:     &counter{make(map[uint64]*hash.Sha), 0},
+		pubKeyCounter:        &counter{make(map[uint64]*hash.Sha), 0},
+		getPubKeyCounter:     &counter{make(map[uint64]*hash.Sha), 0},
+		unknownObjCounter:    &counter{make(map[uint64]*hash.Sha), 0},
 	}
 	return &db
 }

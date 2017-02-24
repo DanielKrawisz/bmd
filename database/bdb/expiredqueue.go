@@ -3,13 +3,13 @@ package bdb
 import (
 	"time"
 
-	"github.com/DanielKrawisz/bmutil/wire"
+	"github.com/DanielKrawisz/bmutil/hash"
 )
 
 // expiration represents a map from index to
 type expiration struct {
 	exp  time.Time
-	hash *wire.ShaHash
+	hash *hash.Sha
 }
 
 // expiredQueue implements heap.Interface and holds expirations.
