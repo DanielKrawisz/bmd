@@ -445,7 +445,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test RemoveEncryptedPubKey for an address that does not exist
-	tag, _ := hash.NewSha(addr.Tag())
+	tag, _ := hash.NewSha(bmutil.Tag(addr))
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err == nil {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): expected error got none",
@@ -519,7 +519,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
-	} else if !reflect.DeepEqual(&idV2.Address, addrV2) {
+	} else if !reflect.DeepEqual(idV2.Address, addrV2) {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -529,7 +529,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
-	} else if !reflect.DeepEqual(&idV3.Address, addrV3) {
+	} else if !reflect.DeepEqual(idV3.Address, addrV3) {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -540,13 +540,13 @@ func testPubKey(tc *testContext) {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
 	}
-	if !reflect.DeepEqual(&idV4.Address, addrV4) {
+	if !reflect.DeepEqual(idV4.Address, addrV4) {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
 
 	// Test whether RemoveEncryptedPubKey fails for a decrypted key.
-	tag, _ = hash.NewSha(idV4.Tag())
+	tag, _ = hash.NewSha(bmutil.Tag(idV4.Address()))
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err != database.ErrNonexistentObject {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): expected nonexistent object"+

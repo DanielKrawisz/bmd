@@ -29,7 +29,7 @@ var (
 	ErrDuplicateObject   = errors.New("duplicate insert attempted")
 	ErrDbDoesNotExist    = errors.New("non-existent database")
 	ErrDbUnknownType     = errors.New("non-existent database type")
-	ErrExpired           = errors.New("object is expired.")
+	ErrExpired           = errors.New("object is expired")
 	ErrNotImplemented    = errors.New("method has not yet been implemented")
 	ErrNonexistentObject = errors.New("object doesn't exist in database")
 )
@@ -72,7 +72,7 @@ type Db interface {
 
 	// FetchIdentityByAddress returns identity.Public stored in the form
 	// of a PubKey message in the pubkey database.
-	FetchIdentityByAddress(*bmutil.Address) (*identity.Public, error)
+	FetchIdentityByAddress(bmutil.Address) (*identity.Public, error)
 
 	// FetchRandomInvHashes returns at most the specified number of
 	// inventory hashes corresponding to random unexpired objects from
@@ -112,7 +112,7 @@ type Db interface {
 	// address from the database. This includes any v2/v3/previously used v4
 	// identities. Note that it doesn't touch the general object store and won't
 	// remove the public key object from there.
-	RemovePublicIdentity(*bmutil.Address) error
+	RemovePublicIdentity(bmutil.Address) error
 }
 
 // DriverDB defines a structure for backend drivers to use when they registered
@@ -171,6 +171,9 @@ func CheckPubKey(pubkey cipher.PubKey) (id *identity.Public, err error) {
 
 	header := pubkey.Object().Header()
 
-	id = identity.NewPublic(signKey, encKey, pubkey.Pow(), header.Version, header.StreamNumber)
-	return
+	id, err = identity.NewPublic(signKey, encKey, pubkey.Behavior(), pubkey.Pow(), header.Version, header.StreamNumber)
+	if err != nil {
+		return nil, err
+	}
+	return id, err
 }

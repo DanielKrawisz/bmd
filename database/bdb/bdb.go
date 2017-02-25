@@ -299,10 +299,7 @@ func (db *boltDB) insertPubkey(o obj.Object) error {
 			return err
 		}
 
-		address, err := id.Address.Encode()
-		if err != nil {
-			return err
-		}
+		address := id.Address().String()
 
 		// Now that all is well, insert it into the database.
 		return db.Update(func(tx *bolt.Tx) error {
@@ -340,7 +337,7 @@ func (db *boltDB) insertPubkey(o obj.Object) error {
 
 		// Add it to database, along with the tag.
 		return db.Update(func(tx *bolt.Tx) error {
-			return tx.Bucket(encPubkeysBucket).Put(id.Address.Tag(), b.Bytes())
+			return tx.Bucket(encPubkeysBucket).Put(bmutil.Tag(id.Address()), b.Bytes())
 		})
 
 	case *obj.EncryptedPubKey:
@@ -467,15 +464,12 @@ func (db *boltDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint6
 
 // FetchIdentityByAddress returns identity.Public stored in the form
 // of a PubKey message in the pubkey database.
-func (db *boltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public, error) {
-	address, err := addr.Encode()
-	if err != nil {
-		return nil, err
-	}
+func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public, error) {
+	address := addr.String()
 
 	// Check if we already have the public keys.
 	var id *identity.Public
-	err = db.View(func(tx *bolt.Tx) error {
+	err := db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(pubIDBucket).Bucket([]byte(address))
 		if bucket == nil {
 			return database.ErrNonexistentObject
@@ -494,13 +488,24 @@ func (db *boltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 				address, err)
 			return err
 		}
+		
+		var behavior uint32
+		if b := bucket.Get(behaviorKey); b != nil {
+			behavior = binary.BigEndian.Uint32(b)
+		} else {
+			behavior = 0
+		}
 
-		id = identity.NewPublic(signKey, encKey,
+		id, err = identity.NewPublic(signKey, encKey,
+			behavior, 
 			&pow.Data{
 				binary.BigEndian.Uint64(bucket.Get(nonceTrialsKey)),
 				binary.BigEndian.Uint64(bucket.Get(extraBytesKey)),
 			},
-			addr.Version, addr.Stream)
+			addr.Version(), addr.Stream())
+		if err != nil {
+			return err
+		}
 		return nil
 	})
 
@@ -514,19 +519,19 @@ func (db *boltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 		return nil, err
 	}
 
-	if addr.Version == obj.SimplePubKeyVersion {
+	if addr.Version() == obj.SimplePubKeyVersion {
 		// There's no way that we can have these unencrypted keys since they are
 		// always added to db.pubIDByAddress.
 		return nil, database.ErrNonexistentObject
 	}
 
 	// We don't support any other version.
-	if addr.Version != obj.EncryptedPubKeyVersion && addr.Version != obj.ExtendedPubKeyVersion {
+	if addr.Version() != obj.EncryptedPubKeyVersion && addr.Version() != obj.ExtendedPubKeyVersion {
 		return nil, database.ErrNotImplemented
 	}
 
 	// Try finding the public key with the required tag and then decrypting it.
-	addrTag := addr.Tag()
+	addrTag := bmutil.Tag(addr)
 
 	err = db.Update(func(tx *bolt.Tx) error {
 		v := tx.Bucket(encPubkeysBucket).Get(addrTag)
@@ -553,7 +558,11 @@ func (db *boltDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public
 		encKey, _ := pubkey.EncryptionKey().ToBtcec()
 
 		// And we have the identity.
-		id = identity.NewPublic(signKey, encKey, pubkey.Pow(), msg.Header().Version, msg.Header().StreamNumber)
+		id, err = identity.NewPublic(signKey, encKey, pubkey.Behavior(), 
+			pubkey.Pow(), msg.Header().Version, msg.Header().StreamNumber)
+		if err != nil {
+			return err
+		}
 
 		// Add public key to database.
 		b, err := tx.Bucket(pubIDBucket).CreateBucketIfNotExists([]byte(address))
@@ -760,17 +769,14 @@ func (db *boltDB) RemoveEncryptedPubKey(tag *hash.Sha) error {
 // address from the database. This includes any v2/v3/previously used v4
 // identities. Note that it doesn't touch the general object store and won't
 // remove the public key object from there.
-func (db *boltDB) RemovePublicIdentity(addr *bmutil.Address) error {
-	address, err := addr.Encode()
-	if err != nil {
-		return err
-	}
+func (db *boltDB) RemovePublicIdentity(addr bmutil.Address) error {
+	address := []byte(addr.String())
 
 	return db.Update(func(tx *bolt.Tx) error {
-		if tx.Bucket(pubIDBucket).Bucket([]byte(address)) == nil {
+		if tx.Bucket(pubIDBucket).Bucket(address) == nil {
 			return database.ErrNonexistentObject
 		}
-		return tx.Bucket(pubIDBucket).DeleteBucket([]byte(address))
+		return tx.Bucket(pubIDBucket).DeleteBucket(address)
 	})
 }
 

@@ -244,7 +244,7 @@ func (db *memDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64
 // of a PubKey message in the pubkey database. It needs to go through all the
 // public keys in the database to find this. The implementation must thus cache
 // results, if needed. This is part of the database.Db interface implementation.
-func (db *memDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
+func (db *memDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
 	error) {
 
 	db.RLock()
@@ -253,10 +253,7 @@ func (db *memDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
 		return nil, database.ErrDbClosed
 	}
 
-	address, err := addr.Encode()
-	if err != nil {
-		return nil, err
-	}
+	address := addr.String()
 
 	// Check if we already have the public keys.
 	id, ok := db.pubIDByAddress[address]
@@ -264,20 +261,20 @@ func (db *memDB) FetchIdentityByAddress(addr *bmutil.Address) (*identity.Public,
 		return id, nil
 	}
 
-	if addr.Version == obj.SimplePubKeyVersion {
+	if addr.Version() == obj.SimplePubKeyVersion {
 		// There's no way that we can have these unencrypted keys since they are
 		// always added to db.pubIDByAddress.
 		return nil, database.ErrNonexistentObject
 	}
 
 	// We don't support any other version.
-	if addr.Version != obj.EncryptedPubKeyVersion && addr.Version != obj.ExtendedPubKeyVersion {
+	if addr.Version() != obj.EncryptedPubKeyVersion && addr.Version() != obj.ExtendedPubKeyVersion {
 		return nil, database.ErrNotImplemented
 	}
 
 	// Try finding the public key with the required tag and then decrypting it.
 	var tag hash.Sha
-	copy(tag[:], addr.Tag())
+	copy(tag[:], bmutil.Tag(addr))
 
 	// Find pubkey to decrypt.
 	msg, ok := db.encryptedPubKeyByTag[tag]
@@ -370,10 +367,7 @@ func (db *memDB) insertPubkey(object obj.Object) error {
 			return err
 		}
 
-		addr, err := id.Address.Encode()
-		if err != nil {
-			return err
-		}
+		addr := id.Address().String()
 
 		// Add public key to database.
 		db.pubIDByAddress[addr] = id
@@ -384,7 +378,7 @@ func (db *memDB) insertPubkey(object obj.Object) error {
 		}
 
 		var tag hash.Sha
-		copy(tag[:], id.Address.Tag())
+		copy(tag[:], bmutil.Tag(id.Address()))
 
 		// Add message to database.
 		db.encryptedPubKeyByTag[tag] = pubkey // insert pubkey
@@ -550,17 +544,14 @@ func (db *memDB) RemoveEncryptedPubKey(tag *hash.Sha) error {
 // identities. Note that it doesn't touch the general object store and won't
 // remove the public key object from there. This is part of the database.Db
 // interface implementation.
-func (db *memDB) RemovePublicIdentity(addr *bmutil.Address) error {
+func (db *memDB) RemovePublicIdentity(addr bmutil.Address) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
 		return database.ErrDbClosed
 	}
 
-	addrStr, err := addr.Encode()
-	if err != nil {
-		return err
-	}
+	addrStr := addr.String()
 
 	_, ok := db.pubIDByAddress[addrStr]
 	if !ok {
