@@ -186,7 +186,7 @@ func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 	delete(om.requested, *invVect)
 
 	// Check PoW.
-	if !omsg.object.CheckPow(pow.DefaultData, time.Now()) {
+	if !omsg.object.CheckPow(pow.Default, time.Now()) {
 		return // invalid PoW
 	}
 

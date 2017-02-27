@@ -73,7 +73,7 @@ type memDB struct {
 
 	// pubIDByAddress keeps track of all v2/v3 and previously decrypted v4
 	// public keys converted into Public identity structs.
-	pubIDByAddress map[string]*identity.Public
+	pubIDByAddress map[string]identity.Public
 
 	// counters for respective object types.
 	msgCounter       *counter
@@ -244,7 +244,7 @@ func (db *memDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint64
 // of a PubKey message in the pubkey database. It needs to go through all the
 // public keys in the database to find this. The implementation must thus cache
 // results, if needed. This is part of the database.Db interface implementation.
-func (db *memDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
+func (db *memDB) FetchIdentityByAddress(addr bmutil.Address) (identity.Public,
 	error) {
 
 	db.RLock()
@@ -287,7 +287,7 @@ func (db *memDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
 		return nil, err
 	}
 
-	id, err = database.CheckPubKey(pubkey)
+	id, err = cipher.ToIdentity(pubkey)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func (db *memDB) insertPubkey(object obj.Object) error {
 	// we can decrypt it.
 	switch pubkey := object.(type) {
 	case *obj.SimplePubKey:
-		id, err := database.CheckPubKey(pubkey)
+		id, err := cipher.ToIdentity(pubkey)
 		if err != nil {
 			return err
 		}
@@ -372,7 +372,7 @@ func (db *memDB) insertPubkey(object obj.Object) error {
 		// Add public key to database.
 		db.pubIDByAddress[addr] = id
 	case *obj.ExtendedPubKey:
-		id, err := database.CheckPubKey(pubkey)
+		id, err := cipher.ToIdentity(pubkey)
 		if err != nil {
 			return err
 		}
@@ -568,7 +568,7 @@ func newMemDb() *memDB {
 	db := memDB{
 		objectsByHash:        make(map[hash.Sha]obj.Object),
 		encryptedPubKeyByTag: make(map[hash.Sha]obj.Object),
-		pubIDByAddress:       make(map[string]*identity.Public),
+		pubIDByAddress:       make(map[string]identity.Public),
 		msgCounter:           &counter{make(map[uint64]*hash.Sha), 0},
 		broadcastCounter:     &counter{make(map[uint64]*hash.Sha), 0},
 		pubKeyCounter:        &counter{make(map[uint64]*hash.Sha), 0},

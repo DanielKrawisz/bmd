@@ -56,7 +56,7 @@ func (s *rpcServer) SendObject(ctx context.Context, in *pb.Object) (*pb.SendObje
 	}
 
 	// Check whether the PoW is valid.
-	if !objMsg.CheckPow(pow.DefaultData, time.Now()) {
+	if !objMsg.CheckPow(pow.Default, time.Now()) {
 		return nil, grpc.Errorf(codes.InvalidArgument, "invalid proof of work")
 	}
 
@@ -95,11 +95,12 @@ func (s *rpcServer) GetIdentity(ctx context.Context, in *pb.GetIdentityRequest) 
 		return nil, grpc.Errorf(codes.Internal, "database error")
 	}
 
+	data := pubID.Data()
 	return &pb.GetIdentityReply{
-		NonceTrials:   pubID.NonceTrialsPerByte,
-		ExtraBytes:    pubID.ExtraBytes,
-		SigningKey:    pubID.VerificationKey.SerializeUncompressed(),
-		EncryptionKey: pubID.EncryptionKey.SerializeUncompressed(),
+		NonceTrials:   data.Pow.NonceTrialsPerByte,
+		ExtraBytes:    data.Pow.ExtraBytes,
+		SigningKey:    data.Verification.Bytes(),
+		EncryptionKey: data.Encryption.Bytes(),
 	}, nil
 }
 

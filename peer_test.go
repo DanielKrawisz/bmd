@@ -19,6 +19,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
@@ -96,10 +97,21 @@ var ripehash = []hash.Ripe{
 		80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99}),
 }
 
+func NewAddress(version, stream uint64, ripe *hash.Ripe, sha *hash.Sha) bmutil.Address {
+	var a bmutil.Address
+	if version == 4 {
+		a, _ = bmutil.NewAddress(4, stream, ripe)
+	} else if version < 4 {
+		a, _ = bmutil.NewDepricatedAddress(version, stream, ripe)
+	}
+
+	return a
+}
+
 // Some bitmessage objects that we use for testing. Two of each.
 var testObj = []obj.Object{
-	obj.NewGetPubKey(654, expires, 4, 1, &ripehash[0], &shahash[0]).MsgObject(),
-	obj.NewGetPubKey(654, expires, 4, 1, &ripehash[1], &shahash[1]).MsgObject(),
+	obj.NewGetPubKey(654, expires, NewAddress(4, 1, &ripehash[0], &shahash[0])).MsgObject(),
+	obj.NewGetPubKey(654, expires, NewAddress(4, 1, &ripehash[1], &shahash[1])).MsgObject(),
 	obj.NewEncryptedPubKey(543, expires, 1, &shahash[0], []byte{11, 12, 13, 14, 15, 16, 17, 18}).MsgObject(),
 	obj.NewEncryptedPubKey(543, expires, 1, &shahash[1], []byte{11, 12, 13, 14, 15, 16, 17, 18}).MsgObject(),
 	obj.NewMessage(765, expires, 1,
@@ -123,7 +135,7 @@ func init() {
 		section := b[8:]
 		hash := hash.Sha512(section)
 		nonce := pow.DoSequential(pow.CalculateTarget(uint64(len(section)),
-			uint64(expires.Sub(time.Now()).Seconds()), pow.DefaultData), hash)
+			uint64(expires.Sub(time.Now()).Seconds()), pow.Default), hash)
 		binary.BigEndian.PutUint64(b, uint64(nonce))
 		testObj[i], _ = wire.DecodeMsgObject(b)
 	}

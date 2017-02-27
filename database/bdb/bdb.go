@@ -294,12 +294,13 @@ func (db *boltDB) remove(counts []counter) error {
 func (db *boltDB) insertPubkey(o obj.Object) error {
 	switch pubkeyMsg := o.(type) {
 	case *obj.SimplePubKey:
-		id, err := database.CheckPubKey(pubkeyMsg)
+		id, err := cipher.ToIdentity(pubkeyMsg)
 		if err != nil {
 			return err
 		}
 
 		address := id.Address().String()
+		data := pubkeyMsg.Data()
 
 		// Now that all is well, insert it into the database.
 		return db.Update(func(tx *bolt.Tx) error {
@@ -309,25 +310,25 @@ func (db *boltDB) insertPubkey(o obj.Object) error {
 			}
 
 			ntb := make([]byte, 8)
-			binary.BigEndian.PutUint64(ntb, id.NonceTrialsPerByte)
+			binary.BigEndian.PutUint64(ntb, data.Pow.NonceTrialsPerByte)
 
 			ebb := make([]byte, 8)
-			binary.BigEndian.PutUint64(ebb, id.ExtraBytes)
+			binary.BigEndian.PutUint64(ebb, data.Pow.ExtraBytes)
 
 			bb := make([]byte, 4)
-			binary.BigEndian.PutUint32(bb, id.Behavior)
+			binary.BigEndian.PutUint32(bb, data.Behavior)
 
 			b.Put(nonceTrialsKey, ntb)
 			b.Put(extraBytesKey, ebb)
 			b.Put(behaviorKey, bb)
-			b.Put(signKeyKey, id.VerificationKey.SerializeCompressed())
-			b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
+			b.Put(signKeyKey, data.Verification.Bytes())
+			b.Put(encKeyKey, data.Encryption.Bytes())
 
 			return nil
 		})
 
 	case *obj.ExtendedPubKey:
-		id, err := database.CheckPubKey(pubkeyMsg)
+		id, err := cipher.ToIdentity(pubkeyMsg)
 		if err != nil {
 			return err
 		}
@@ -464,11 +465,11 @@ func (db *boltDB) FetchObjectsFromCounter(objType wire.ObjectType, counter uint6
 
 // FetchIdentityByAddress returns identity.Public stored in the form
 // of a PubKey message in the pubkey database.
-func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public, error) {
+func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (identity.Public, error) {
 	address := addr.String()
 
 	// Check if we already have the public keys.
-	var id *identity.Public
+	var id identity.Public
 	err := db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(pubIDBucket).Bucket([]byte(address))
 		if bucket == nil {
@@ -488,7 +489,7 @@ func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
 				address, err)
 			return err
 		}
-		
+
 		var behavior uint32
 		if b := bucket.Get(behaviorKey); b != nil {
 			behavior = binary.BigEndian.Uint32(b)
@@ -496,13 +497,17 @@ func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
 			behavior = 0
 		}
 
-		id, err = identity.NewPublic(signKey, encKey,
-			behavior, 
+		id, err = identity.NewPublic(
+			&identity.PublicKey{
+				Verification: (*identity.PubKey)(signKey),
+				Encryption:   (*identity.PubKey)(encKey),
+			},
+			addr.Version(), addr.Stream(),
+			behavior,
 			&pow.Data{
 				binary.BigEndian.Uint64(bucket.Get(nonceTrialsKey)),
 				binary.BigEndian.Uint64(bucket.Get(extraBytesKey)),
-			},
-			addr.Version(), addr.Stream())
+			})
 		if err != nil {
 			return err
 		}
@@ -554,12 +559,18 @@ func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
 		}
 
 		// Already verified them in TryDecryptAndVerifyPubKey.
-		signKey, _ := pubkey.VerificationKey().ToBtcec()
-		encKey, _ := pubkey.EncryptionKey().ToBtcec()
+		data := pubkey.Data()
+		signKey, _ := data.Verification.ToBtcec()
+		encKey, _ := data.Encryption.ToBtcec()
 
 		// And we have the identity.
-		id, err = identity.NewPublic(signKey, encKey, pubkey.Behavior(), 
-			pubkey.Pow(), msg.Header().Version, msg.Header().StreamNumber)
+		id, err = identity.NewPublic(
+			&identity.PublicKey{
+				Verification: (*identity.PubKey)(signKey),
+				Encryption:   (*identity.PubKey)(encKey),
+			},
+			msg.Header().Version, msg.Header().StreamNumber,
+			pubkey.Behavior(), pubkey.Pow())
 		if err != nil {
 			return err
 		}
@@ -571,19 +582,19 @@ func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (*identity.Public,
 		}
 
 		ntb := make([]byte, 8)
-		binary.BigEndian.PutUint64(ntb, id.NonceTrialsPerByte)
+		binary.BigEndian.PutUint64(ntb, data.Pow.NonceTrialsPerByte)
 
 		ebb := make([]byte, 8)
-		binary.BigEndian.PutUint64(ebb, id.ExtraBytes)
+		binary.BigEndian.PutUint64(ebb, data.Pow.ExtraBytes)
 
 		bb := make([]byte, 4)
-		binary.BigEndian.PutUint32(bb, id.Behavior)
+		binary.BigEndian.PutUint32(bb, data.Behavior)
 
 		b.Put(nonceTrialsKey, ntb)
 		b.Put(extraBytesKey, ebb)
 		b.Put(behaviorKey, bb)
-		b.Put(signKeyKey, id.VerificationKey.SerializeCompressed())
-		b.Put(encKeyKey, id.EncryptionKey.SerializeCompressed())
+		b.Put(signKeyKey, data.Verification.Bytes())
+		b.Put(encKeyKey, data.Encryption.Bytes())
 
 		// Delete from encrypted pubkeys.
 		return tx.Bucket(encPubkeysBucket).Delete(addrTag)

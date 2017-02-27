@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/DanielKrawisz/bmutil"
-	"github.com/DanielKrawisz/bmutil/cipher"
 	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/identity"
 	"github.com/DanielKrawisz/bmutil/wire"
@@ -70,9 +69,9 @@ type Db interface {
 	FetchObjectsFromCounter(objType wire.ObjectType, counter uint64,
 		count uint64) ([]ObjectWithCounter, uint64, error)
 
-	// FetchIdentityByAddress returns identity.Public stored in the form
+	// FetchIdentityByAddress returns identity.PublicID stored in the form
 	// of a PubKey message in the pubkey database.
-	FetchIdentityByAddress(bmutil.Address) (*identity.Public, error)
+	FetchIdentityByAddress(bmutil.Address) (identity.Public, error)
 
 	// FetchRandomInvHashes returns at most the specified number of
 	// inventory hashes corresponding to random unexpired objects from
@@ -153,27 +152,4 @@ func SupportedDBs() []string {
 		supportedDBs = append(supportedDBs, drv.DbType)
 	}
 	return supportedDBs
-}
-
-// CheckPubKey is used to check
-func CheckPubKey(pubkey cipher.PubKey) (id *identity.Public, err error) {
-	// Check signing key.
-	signKey, err := pubkey.VerificationKey().ToBtcec()
-	if err != nil {
-		return
-	}
-
-	// Check encryption key.
-	encKey, err := pubkey.EncryptionKey().ToBtcec()
-	if err != nil {
-		return
-	}
-
-	header := pubkey.Object().Header()
-
-	id, err = identity.NewPublic(signKey, encKey, pubkey.Behavior(), pubkey.Pow(), header.Version, header.StreamNumber)
-	if err != nil {
-		return nil, err
-	}
-	return id, err
 }
