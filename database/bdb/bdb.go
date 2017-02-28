@@ -310,10 +310,10 @@ func (db *boltDB) insertPubkey(o obj.Object) error {
 			}
 
 			ntb := make([]byte, 8)
-			binary.BigEndian.PutUint64(ntb, data.Pow.NonceTrialsPerByte)
+			binary.BigEndian.PutUint64(ntb, pow.Default.NonceTrialsPerByte)
 
 			ebb := make([]byte, 8)
-			binary.BigEndian.PutUint64(ebb, data.Pow.ExtraBytes)
+			binary.BigEndian.PutUint64(ebb, pow.Default.ExtraBytes)
 
 			bb := make([]byte, 4)
 			binary.BigEndian.PutUint32(bb, data.Behavior)
