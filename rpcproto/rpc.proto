@@ -39,6 +39,8 @@ message GetIdentityReply {
 
   // Uncompressed secp256k1 public key.
   bytes encryption_key = 4;
+
+  uint32 behavior = 5;
 }
 
 message Object {
