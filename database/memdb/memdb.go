@@ -273,11 +273,10 @@ func (db *memDB) FetchIdentityByAddress(addr bmutil.Address) (identity.Public,
 	}
 
 	// Try finding the public key with the required tag and then decrypting it.
-	var tag hash.Sha
-	copy(tag[:], bmutil.Tag(addr))
+	tag := bmutil.Tag(addr)
 
 	// Find pubkey to decrypt.
-	msg, ok := db.encryptedPubKeyByTag[tag]
+	msg, ok := db.encryptedPubKeyByTag[*tag]
 	if !ok {
 		return nil, database.ErrNonexistentObject
 	}
@@ -296,7 +295,7 @@ func (db *memDB) FetchIdentityByAddress(addr bmutil.Address) (identity.Public,
 	db.pubIDByAddress[address] = id
 
 	// Delete from map of encrypted pubkeys.
-	delete(db.encryptedPubKeyByTag, tag)
+	delete(db.encryptedPubKeyByTag, *tag)
 
 	return id, nil
 
@@ -377,11 +376,10 @@ func (db *memDB) insertPubkey(object obj.Object) error {
 			return err
 		}
 
-		var tag hash.Sha
-		copy(tag[:], bmutil.Tag(id.Address()))
+		tag := bmutil.Tag(id.Address())
 
 		// Add message to database.
-		db.encryptedPubKeyByTag[tag] = pubkey // insert pubkey
+		db.encryptedPubKeyByTag[*tag] = pubkey // insert pubkey
 	case *obj.EncryptedPubKey:
 		// Add message to database.
 		db.encryptedPubKeyByTag[*pubkey.Tag] = pubkey // insert pubkey

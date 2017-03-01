@@ -16,11 +16,23 @@ import (
 	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
-	"github.com/DanielKrawisz/bmutil"
+	. "github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
+
+func MakeAddress(version, stream uint64, ripe *hash.Ripe) Address {
+	var a Address
+
+	if version == 4 {
+		a, _ = NewAddress(version, stream, ripe)
+	} else {
+		a, _ = NewDepricatedAddress(version, stream, ripe)
+	}
+
+	return a
+}
 
 // testContext is used to store context information about a running test which
 // is passed into helper functions.
@@ -88,8 +100,8 @@ var ripehash = []hash.Ripe{
 // Some bitmessage objects that we use for testing. Two of each.
 var testObj = [][]obj.Object{
 	[]obj.Object{
-		obj.NewGetPubKey(654, expires, 4, 1, &ripehash[0], &shahash[0]),
-		obj.NewGetPubKey(654, expired, 4, 1, &ripehash[1], &shahash[1]),
+		obj.NewGetPubKey(654, expires, MakeAddress(4, 1, &ripehash[0])),
+		obj.NewGetPubKey(654, expired, MakeAddress(4, 1, &ripehash[1])),
 	},
 	[]obj.Object{
 		obj.NewEncryptedPubKey(543, expires, 1, &shahash[0], []byte{11, 12, 13, 14, 15, 16, 17, 18}),
@@ -434,7 +446,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test FetchIdentityByAddress for an address that does not exist
-	addr, err := bmutil.DecodeAddress("BM-2cV9RshwouuVKWLBoyH5cghj3kMfw5G7BJ")
+	addr, err := DecodeAddress("BM-2cV9RshwouuVKWLBoyH5cghj3kMfw5G7BJ")
 	if err != nil {
 		tc.t.Fatalf("DecodeAddress failed, got error %v", err)
 	}
@@ -445,7 +457,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test RemoveEncryptedPubKey for an address that does not exist
-	tag, _ := hash.NewSha(bmutil.Tag(addr))
+	tag := Tag(addr)
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err == nil {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): expected error got none",
@@ -460,7 +472,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test inserting valid v2 public key
-	addrV2, _ := bmutil.DecodeAddress("BM-orNprZ3PNHsLgK5CQMgRoje1aCKgRA4QP")
+	addrV2, _ := DecodeAddress("BM-orNprZ3PNHsLgK5CQMgRoje1aCKgRA4QP")
 	data, _ := hex.DecodeString("000000000000000000000000000000000000000102010000000187b541daefffc4b5ad1e61579e30c049709247630305e7962dcdf9ea2d0ef3e10ede4864ea5cfb42bd4ffa8b6f713490f106333b4e2ea8aed7b1ec7a7713958b380c6bac1f9742ef20fde832d0321a0643104ad98a91cf31f8ea0d28aa9886f19369ec065eafd823ae2c661cd586b111f72f18aa0b68db57f553f9b86f182f8f")
 	msg := new(wire.MsgObject)
 	err = msg.Decode(bytes.NewReader(data))
@@ -478,7 +490,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test inserting valid v3 public key
-	addrV3, _ := bmutil.DecodeAddress("BM-2D7oboD97WDibFcc792gkZjkvb3JQARiQx")
+	addrV3, _ := DecodeAddress("BM-2D7oboD97WDibFcc792gkZjkvb3JQARiQx")
 	data, _ = hex.DecodeString("0000000001FB575F000000005581B73A00000001030100000001520A752F43BD36DA5BD2C77FDB7E53C597EB21BDA6BD08A80AC2F4ACC3D885DE19945F02D6D18A655FD831F071B6224E0F145F7C3138BE07DB7C4C9C8BD234DD8333DA6BA201B9893982B28B740AB6252E3A146677A1EDE15F567F15D8E8C83EAD7547AC132D008418330810243A43DBCF2DD39C5283913ED6BD6C1A3B468271FD03E8FD03E8473045022100AB37F26D1709E43FD24852273033D97764F2498E170422EDC6775FADE21F7A9502206FEB2527BBCAF77E7D07BAF6FCD2F4ED49B8B4D1C3FCE7DEB6149D7E9DF3CD95")
 	msg = new(wire.MsgObject)
 	err = msg.Decode(bytes.NewReader(data))
@@ -496,7 +508,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test inserting valid v4 public key
-	addrV4, _ := bmutil.DecodeAddress("BM-2cTFEueNqmjgR3EqduEZmaZbEW1h9z7M7o")
+	addrV4, _ := DecodeAddress("BM-2cTFEueNqmjgR3EqduEZmaZbEW1h9z7M7o")
 	data, _ = hex.DecodeString("00000000025A04D60000000055A4EA7C0000000104017F933D64A866DE24C27D647C74068A59DCEE0CABFC1DF887BE7DD30BA3BD9143D513F0B37087891F6A98DD0B55B1A73E02CA002090CE6A050E760F52D18F7F50B1B9139DBCEF861254C195173AA601DE8A72B52E00206FAF91EDD32E213097CD91E4ACBB883CB2F8CC6AAFCC670DDE1FAC52C210469D71B08A162E07C4B8926A50CC0701594AF55D65052C2D9D74CE28BB571D781423C101BDC8DB6CE3FA639BDDE9CE39364307188470AEC410F7EE2BCC008CA6B1F2A37CF0841FC5EDE154C172438061577FBF3BC6BCDAAAB9BBCC90378DE815A99B0B78D81DFC9ABE33F99B4BC2AFAC2101ED7E0E213C00011FF3583B1E2BAADEF4BED2DB17F340258C22D38F8B490040B94E01F76F2118D90D718FFAFFB7D8F2A9F2B3498D45D528F16BCE55B43E63AAF3AED720F0AC06FCEB853661ACE13714069AA47A3D2FD6180AD0458B344E7AF04A26A25490DCEF236EE29CDF2FD96CDF55EB2B0D4DACA1EC21B4049DB6A6C713A2350D6ECE4C77C01DA01BCAAB2F2CBB31")
 	msg = new(wire.MsgObject)
 	err = msg.Decode(bytes.NewReader(data))
@@ -546,7 +558,7 @@ func testPubKey(tc *testContext) {
 	}
 
 	// Test whether RemoveEncryptedPubKey fails for a decrypted key.
-	tag, _ = hash.NewSha(bmutil.Tag(idV4.Address()))
+	tag = Tag(idV4.Address())
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err != database.ErrNonexistentObject {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): expected nonexistent object"+

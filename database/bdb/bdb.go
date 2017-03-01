@@ -338,7 +338,7 @@ func (db *boltDB) insertPubkey(o obj.Object) error {
 
 		// Add it to database, along with the tag.
 		return db.Update(func(tx *bolt.Tx) error {
-			return tx.Bucket(encPubkeysBucket).Put(bmutil.Tag(id.Address()), b.Bytes())
+			return tx.Bucket(encPubkeysBucket).Put(bmutil.Tag(id.Address())[:], b.Bytes())
 		})
 
 	case *obj.EncryptedPubKey:
@@ -536,7 +536,7 @@ func (db *boltDB) FetchIdentityByAddress(addr bmutil.Address) (identity.Public, 
 	}
 
 	// Try finding the public key with the required tag and then decrypting it.
-	addrTag := bmutil.Tag(addr)
+	addrTag := bmutil.Tag(addr)[:]
 
 	err = db.Update(func(tx *bolt.Tx) error {
 		v := tx.Bucket(encPubkeysBucket).Get(addrTag)
