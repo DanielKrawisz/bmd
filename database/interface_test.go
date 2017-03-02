@@ -417,7 +417,7 @@ func testCounter(tc *testContext) {
 }
 
 // testPubKey tests inserting public key messages, FetchIdentityByAddress,
-// RemoveEncryptedPubKey and RemovePublicIdentity
+// RemoveEncryptedPubKey and RemoveIdentity
 func testPubKey(tc *testContext) {
 	teardown := tc.newDb()
 	defer teardown()
@@ -464,10 +464,10 @@ func testPubKey(tc *testContext) {
 			tc.dbType)
 	}
 
-	// test RemovePublicIdentity for an address that does not exist
-	err = tc.db.RemovePublicIdentity(addr)
+	// test RemoveIdentity for an address that does not exist
+	err = tc.db.RemoveIdentity(addr)
 	if err == nil {
-		tc.t.Errorf("RemovePublicIdentity (%s): expected error got none",
+		tc.t.Errorf("RemoveIdentity (%s): expected error got none",
 			tc.dbType)
 	}
 
@@ -582,26 +582,26 @@ func testPubKey(tc *testContext) {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): got error %v", tc.dbType, err)
 	}
 
-	// test RemovePublicIdentity for an address that exists in the database
+	// test RemoveIdentity for an address that exists in the database
 	// v2
-	err = tc.db.RemovePublicIdentity(addrV2)
+	err = tc.db.RemoveIdentity(addrV2)
 	if err != nil {
-		tc.t.Errorf("RemovePublicIdentity (%s): got error %v", tc.dbType, err)
+		tc.t.Errorf("RemoveIdentity (%s): got error %v", tc.dbType, err)
 	}
 	// v3
-	err = tc.db.RemovePublicIdentity(addrV3)
+	err = tc.db.RemoveIdentity(addrV3)
 	if err != nil {
-		tc.t.Errorf("RemovePublicIdentity (%s): got error %v", tc.dbType, err)
+		tc.t.Errorf("RemoveIdentity (%s): got error %v", tc.dbType, err)
 	}
 	// decrypted v4
-	err = tc.db.RemovePublicIdentity(addrV4)
+	err = tc.db.RemoveIdentity(addrV4)
 	if err != nil {
-		tc.t.Errorf("RemovePublicIdentity (%s): got error %v", tc.dbType, err)
+		tc.t.Errorf("RemoveIdentity (%s): got error %v", tc.dbType, err)
 	}
 	// Test RemovePubKey for an address that was removed.
-	err = tc.db.RemovePublicIdentity(addrV2)
+	err = tc.db.RemoveIdentity(addrV2)
 	if err != database.ErrNonexistentObject {
-		tc.t.Errorf("RemovePublicIdentity (%s): expected nonexistent object"+
+		tc.t.Errorf("RemoveIdentity (%s): expected nonexistent object"+
 			" error, got %v", tc.dbType, err)
 	}
 

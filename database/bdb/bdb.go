@@ -776,11 +776,11 @@ func (db *boltDB) RemoveEncryptedPubKey(tag *hash.Sha) error {
 	})
 }
 
-// RemovePublicIdentity removes the public identity corresponding the given
+// RemoveIdentity removes the public identity corresponding the given
 // address from the database. This includes any v2/v3/previously used v4
 // identities. Note that it doesn't touch the general object store and won't
 // remove the public key object from there.
-func (db *boltDB) RemovePublicIdentity(addr bmutil.Address) error {
+func (db *boltDB) RemoveIdentity(addr bmutil.Address) error {
 	address := []byte(addr.String())
 
 	return db.Update(func(tx *bolt.Tx) error {
@@ -821,6 +821,26 @@ func (db *boltDB) FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error) {
 	}
 
 	return hashes, nil
+}
+
+// Get the addresses corresponding to all public identities in the database.
+func (db *boltDB) GetAllIdentities() ([]bmutil.Address, error) {
+	var addrs []bmutil.Address
+	err := db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(pubIDBucket).ForEach(func(k, v []byte) error {
+			address, err := bmutil.DecodeAddress(string(k))
+			if err != nil {
+				return nil
+			}
+			addrs = append(addrs, address)
+			return nil
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return addrs, nil
 }
 
 func init() {

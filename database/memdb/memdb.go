@@ -537,12 +537,12 @@ func (db *memDB) RemoveEncryptedPubKey(tag *hash.Sha) error {
 	return nil
 }
 
-// RemovePublicIdentity removes the public identity corresponding the given
+// RemoveIdentity removes the public identity corresponding the given
 // address from the database. This includes any v2/v3/previously used v4
 // identities. Note that it doesn't touch the general object store and won't
 // remove the public key object from there. This is part of the database.Db
 // interface implementation.
-func (db *memDB) RemovePublicIdentity(addr bmutil.Address) error {
+func (db *memDB) RemoveIdentity(addr bmutil.Address) error {
 	db.Lock()
 	defer db.Unlock()
 	if db.closed {
@@ -559,6 +559,27 @@ func (db *memDB) RemovePublicIdentity(addr bmutil.Address) error {
 	delete(db.pubIDByAddress, addrStr) // remove
 	return nil
 
+}
+
+// Get the addresses corresponding to all public identities in the database.
+func (db *memDB) GetAllIdentities() ([]bmutil.Address, error) {
+	if db.closed {
+		return nil, database.ErrDbClosed
+	}
+
+	db.Lock()
+	defer db.Unlock()
+
+	addrs := make([]bmutil.Address, 0, len(db.pubIDByAddress))
+	for addr := range db.pubIDByAddress {
+		address, err := bmutil.DecodeAddress(addr)
+		if err != nil {
+			return nil, err
+		}
+		addrs = append(addrs, address)
+	}
+
+	return addrs, nil
 }
 
 // newMemDb returns a new memory-only database ready for object insertion.

@@ -107,11 +107,14 @@ type Db interface {
 	// store and won't remove the public key from there.
 	RemoveEncryptedPubKey(*hash.Sha) error
 
-	// RemovePublicIdentity removes the public identity corresponding the given
+	// RemoveIdentity removes the public identity corresponding the given
 	// address from the database. This includes any v2/v3/previously used v4
 	// identities. Note that it doesn't touch the general object store and won't
 	// remove the public key object from there.
-	RemovePublicIdentity(bmutil.Address) error
+	RemoveIdentity(bmutil.Address) error
+
+	// Get the addresses corresponding to all public identities in the database.
+	GetAllIdentities() ([]bmutil.Address, error)
 }
 
 // DriverDB defines a structure for backend drivers to use when they registered
