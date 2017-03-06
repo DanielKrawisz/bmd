@@ -92,6 +92,19 @@ type boltDB struct {
 
 	// A map of object hashes to counters.
 	counters map[hash.Sha]counter
+
+	// A stats recorder that tracks data on objects in the network.
+	stats database.Stats
+}
+
+func newBoltDBStats(db *bolt.DB, r database.Stats) (*boltDB, error) {
+	bdb, err := newBoltDB(db)
+	if err != nil {
+		return nil, err
+	}
+
+	bdb.stats = r
+	return bdb, nil
 }
 
 // newBoltDB creates a new boltDB
@@ -667,10 +680,16 @@ func (db *boltDB) InsertObject(o obj.Object) (uint64, error) {
 		return 0, err
 	}
 
+	bytes := b.Bytes()
+
+	if db.stats != nil {
+		db.stats.RecordObject(hash, uint64(len(bytes)), now)
+	}
+
 	err = db.Update(func(tx *bolt.Tx) error {
 
 		// Insert object along with its hash.
-		err = tx.Bucket(objectsBucket).Put(obj.InventoryHash(o)[:], b.Bytes())
+		err = tx.Bucket(objectsBucket).Put(hash[:], bytes)
 		if err != nil {
 			return err
 		}

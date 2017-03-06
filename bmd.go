@@ -146,7 +146,7 @@ func setupDB(dbType, dbPath string) (database.Db, error) {
 	if dbType == "memdb" {
 		return database.OpenDB(dbType)
 	}
-	db, err := database.OpenDB(dbType, dbPath)
+	db, err := database.OpenDB(dbType, dbPath, filepath.Join(cfg.DataDir, "objlogs.txt"))
 	if err != nil {
 		return nil, err
 	}
