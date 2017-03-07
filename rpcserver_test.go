@@ -200,7 +200,7 @@ func TestRPCConnection(t *testing.T) {
 	cfg.RPCUser = rpcAdminPass
 	cfg.RPCLimitUser = rpcLimitUser
 	cfg.RPCLimitPass = rpcLimitPass
-	cfg.DisableRPC = false
+	cfg.EnableRPC = true
 	cfg.DisableTLS = true
 	cfg.RPCMaxClients = 1
 	defer resetCfg(cfg)()

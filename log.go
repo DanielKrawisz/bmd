@@ -17,6 +17,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmd/objmgr"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmd/rpc"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/btcsuite/btclog"
 	"github.com/btcsuite/seelog"
@@ -93,6 +94,7 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 
 	case "RPC":
 		rpcLog = logger
+		rpc.UseLogger(logger)
 
 	case "SERVER":
 		serverLog = logger

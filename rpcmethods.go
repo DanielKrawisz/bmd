@@ -6,9 +6,11 @@
 package main
 
 import (
+	"sync"
 	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
+	"github.com/DanielKrawisz/bmd/rpc"
 	pb "github.com/DanielKrawisz/bmd/rpcproto"
 	"github.com/DanielKrawisz/bmutil"
 	"github.com/DanielKrawisz/bmutil/pow"
@@ -19,12 +21,34 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+const (
+	// rpcCounterObjectsSize is the number of objects that db.FetchObjectsFromCounter
+	// will fetch per query to the database. This is used when a client requests
+	// subscription to an object type from a specified counter value.
+	rpcCounterObjectsSize = 100
+)
+
+type rpcServer struct {
+	rpc.Server
+	server *server
+
+	// Conds for notifying listening clients about pending objects. Key is the
+	// string representation of the object type.
+	objConds map[string]*sync.Cond
+}
+
+// NotifyObject is used to notify the RPC server of any new objects so that it
+// can send those onwards to the client.
+func (s *rpcServer) NotifyObject(objType wire.ObjectType) {
+	s.objConds[objType.String()].Broadcast()
+}
+
 // SendObject inserts the object into bmd's database and sends it out to the
 // Bitmessage network.
 func (s *rpcServer) SendObject(ctx context.Context, in *pb.Object) (*pb.SendObjectReply, error) {
 	rpcLog.Trace("SendObject: object received to be sent out into the network.")
 
-	if code := s.restrictAuth(ctx); code != codes.OK {
+	if code := s.RestrictAuth(ctx); code != codes.OK {
 		return nil, grpc.Errorf(code, "auth failure")
 	}
 	if len(in.Contents) == 0 {
@@ -77,7 +101,7 @@ func (s *rpcServer) SendObject(ctx context.Context, in *pb.Object) (*pb.SendObje
 // GetIdentity returns the stored public key associated with the given
 // Bitmessage address.
 func (s *rpcServer) GetIdentity(ctx context.Context, in *pb.GetIdentityRequest) (*pb.GetIdentityReply, error) {
-	if code := s.restrictAuth(ctx); code != codes.OK {
+	if code := s.RestrictAuth(ctx); code != codes.OK {
 		return nil, grpc.Errorf(code, "auth failure")
 	}
 
@@ -109,7 +133,7 @@ func (s *rpcServer) GetIdentity(ctx context.Context, in *pb.GetIdentityRequest) 
 // counter value from the database and streams them to the client.
 func (s *rpcServer) GetObjects(in *pb.GetObjectsRequest, stream pb.Bmd_GetObjectsServer) error {
 	ctx := stream.Context()
-	if code := s.restrictAuth(ctx); code != codes.OK {
+	if code := s.RestrictAuth(ctx); code != codes.OK {
 		return grpc.Errorf(code, "auth failure")
 	}
 
@@ -155,4 +179,29 @@ func (s *rpcServer) GetObjects(in *pb.GetObjectsRequest, stream pb.Bmd_GetObject
 			}
 		}
 	}
+}
+
+// newRPCServer returns a new instance of the Server struct.
+func newRPCServer(s *server, rpcCfg *rpc.Config) (*rpcServer, error) {
+
+	rpc, err := rpc.NewRPCServer(rpcCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	rpcServer := &rpcServer{
+		Server: *rpc,
+		server: s,
+		objConds: map[string]*sync.Cond{
+			wire.ObjectTypeGetPubKey.String(): sync.NewCond(&sync.Mutex{}),
+			wire.ObjectTypePubKey.String():    sync.NewCond(&sync.Mutex{}),
+			wire.ObjectTypeMsg.String():       sync.NewCond(&sync.Mutex{}),
+			wire.ObjectTypeBroadcast.String(): sync.NewCond(&sync.Mutex{}),
+			wire.ObjectType(999).String():     sync.NewCond(&sync.Mutex{}), // Unknown
+		},
+	}
+
+	pb.RegisterBmdServer(rpc.GRPC(), rpcServer)
+
+	return rpcServer, nil
 }

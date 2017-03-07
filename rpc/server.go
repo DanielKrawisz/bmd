@@ -6,7 +6,7 @@
 // Use of this source code is governed by an ISC
 // license that can be found in the LICENSE file.
 
-package main
+package rpc
 
 import (
 	"crypto/sha256"
@@ -19,11 +19,8 @@ import (
 	"net"
 	"os"
 	"sync"
-	"sync/atomic"
 	"time"
 
-	pb "github.com/DanielKrawisz/bmd/rpcproto"
-	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/btcsuite/btcutil"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -31,31 +28,6 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 )
-
-const (
-	// rpcCounterObjectsSize is the number of objects that db.FetchObjectsFromCounter
-	// will fetch per query to the database. This is used when a client requests
-	// subscription to an object type from a specified counter value.
-	rpcCounterObjectsSize = 100
-)
-
-// rpcServer holds the items the rpc server may need to access (config,
-// shutdown, main server, etc.)
-type rpcServer struct {
-	server       *server
-	rpcSrv       *grpc.Server
-	listeners    []net.Listener
-	limitauthsha [sha256.Size]byte
-	authsha      [sha256.Size]byte
-	mutex        sync.RWMutex
-	started      int32
-	shutdown     int32
-	wg           sync.WaitGroup
-	// Conds for notifying listening clients about pending objects. Key is the
-	// string representation of the object type.
-	objConds map[string]*sync.Cond
-	quit     chan int
-}
 
 // genCertPair generates a key/cert pair to the paths provided.
 func genCertPair(certFile, keyFile string) error {
@@ -81,9 +53,27 @@ func genCertPair(certFile, keyFile string) error {
 	return nil
 }
 
-// restrictAuth restricts access of the client, returning an error if the client
+// Server holds the items the rpc server may need to access (config,
+// shutdown, main server, etc.)
+type Server struct {
+	sync.Mutex
+	on bool
+	wg sync.WaitGroup
+
+	rpcSrv       *grpc.Server
+	listeners    []net.Listener
+	limitauthsha [sha256.Size]byte
+	authsha      [sha256.Size]byte
+}
+
+// GRPC returns the grpc server.
+func (s *Server) GRPC() *grpc.Server {
+	return s.rpcSrv
+}
+
+// RestrictAuth restricts access of the client, returning an error if the client
 // is not already authenticated.
-func (s *rpcServer) restrictAuth(ctx context.Context) codes.Code {
+func (s *Server) RestrictAuth(ctx context.Context) codes.Code {
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		return codes.Unauthenticated
@@ -111,9 +101,9 @@ func (s *rpcServer) restrictAuth(ctx context.Context) codes.Code {
 	return codes.PermissionDenied
 }
 
-// restrictAdmin restricts access of the client, returning an error if the
+// RestrictAdmin restricts access of the client, returning an error if the
 // client is not already authenticated as an admin.
-func (s *rpcServer) restrictAdmin(ctx context.Context) codes.Code {
+func (s *Server) RestrictAdmin(ctx context.Context) codes.Code {
 	md, ok := metadata.FromContext(ctx)
 	if !ok {
 		return codes.Unauthenticated
@@ -133,59 +123,44 @@ func (s *rpcServer) restrictAdmin(ctx context.Context) codes.Code {
 	return codes.PermissionDenied
 }
 
-// NotifyObject is used to notify the RPC server of any new objects so that it
-// can send those onwards to the client.
-func (s *rpcServer) NotifyObject(objType wire.ObjectType) {
-	s.objConds[objType.String()].Broadcast()
-}
-
-// newRPCServer returns a new instance of the rpcServer struct.
-func newRPCServer(listenAddrs []string, s *server) (*rpcServer, error) {
+// NewRPCServer returns a new instance of the Server struct.
+func NewRPCServer(cfg *Config) (*Server, error) {
 
 	// Setup TLS if not disabled.
 	listenFunc := net.Listen
 	var opts []grpc.ServerOption
 	if !cfg.DisableTLS {
-		if !fileExists(cfg.RPCKey) && !fileExists(cfg.RPCCert) {
-			err := genCertPair(cfg.RPCCert, cfg.RPCKey)
+		if !FileExists(cfg.Key) && !FileExists(cfg.Cert) {
+			err := genCertPair(cfg.Cert, cfg.Key)
 			if err != nil {
 				return nil, err
 			}
 		}
 
-		creds, err := credentials.NewServerTLSFromFile(cfg.RPCCert, cfg.RPCKey)
+		creds, err := credentials.NewServerTLSFromFile(cfg.Cert, cfg.Key)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to generate credentials %v", err)
 		}
 		opts = []grpc.ServerOption{grpc.Creds(creds)}
 	}
 
-	rpc := rpcServer{
-		server: s,
+	rpc := Server{
 		rpcSrv: grpc.NewServer(opts...), // Create the underlying RPC server.
-		quit:   make(chan int),
-		objConds: map[string]*sync.Cond{
-			wire.ObjectTypeGetPubKey.String(): sync.NewCond(&sync.Mutex{}),
-			wire.ObjectTypePubKey.String():    sync.NewCond(&sync.Mutex{}),
-			wire.ObjectTypeMsg.String():       sync.NewCond(&sync.Mutex{}),
-			wire.ObjectTypeBroadcast.String(): sync.NewCond(&sync.Mutex{}),
-			wire.ObjectType(999).String():     sync.NewCond(&sync.Mutex{}), // Unknown
-		},
 	}
-	pb.RegisterBmdServer(rpc.rpcSrv, &rpc)
+	//pb.RegisterBmdServer(rpc.rpcSrv, &rpc)
 
-	if cfg.RPCUser != "" && cfg.RPCPass != "" {
-		login := base64.StdEncoding.EncodeToString([]byte(cfg.RPCUser + ":" +
-			cfg.RPCPass))
+	if cfg.User != "" && cfg.Pass != "" {
+		login := base64.StdEncoding.EncodeToString([]byte(cfg.User + ":" +
+			cfg.Pass))
 		rpc.authsha = sha256.Sum256([]byte("Basic " + login))
 	}
-	if cfg.RPCLimitUser != "" && cfg.RPCLimitPass != "" {
-		login := base64.StdEncoding.EncodeToString([]byte(cfg.RPCLimitUser + ":" +
-			cfg.RPCLimitPass))
+	if cfg.LimitUser != "" && cfg.LimitPass != "" {
+		login := base64.StdEncoding.EncodeToString([]byte(cfg.LimitUser + ":" +
+			cfg.LimitPass))
 		rpc.limitauthsha = sha256.Sum256([]byte("Basic " + login))
 	}
 
-	ipv4ListenAddrs, ipv6ListenAddrs, err := parseListeners(listenAddrs)
+	ipv4ListenAddrs, ipv6ListenAddrs, err := ParseListeners(cfg.Listeners)
 	if err != nil {
 		return nil, err
 	}
@@ -218,11 +193,14 @@ func newRPCServer(listenAddrs []string, s *server) (*rpcServer, error) {
 }
 
 // Stop is used by server.go to stop the rpc listener.
-func (s *rpcServer) Stop() error {
-	if atomic.AddInt32(&s.shutdown, 1) != 1 {
-		rpcLog.Infof("RPC server is already in the process of shutting down")
+func (s *Server) Stop() error {
+	s.Lock()
+	defer s.Unlock()
+
+	if !s.on {
 		return nil
 	}
+
 	rpcLog.Warnf("RPC server shutting down")
 
 	for _, listener := range s.listeners {
@@ -233,15 +211,22 @@ func (s *rpcServer) Stop() error {
 		}
 	}
 
-	close(s.quit)
 	s.wg.Wait()
 	rpcLog.Infof("RPC server shutdown complete")
 	return nil
 }
 
+// Running tells whether the server is running.
+func (s *Server) Running() bool {
+	return s.on
+}
+
 // Start is used by server.go to start the rpc listener.
-func (s *rpcServer) Start() {
-	if atomic.AddInt32(&s.started, 1) != 1 {
+func (s *Server) Start() {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.on {
 		return
 	}
 
@@ -257,6 +242,8 @@ func (s *rpcServer) Start() {
 			s.wg.Done()
 		}(listener)
 	}
+
+	s.on = true
 }
 
 func init() {
