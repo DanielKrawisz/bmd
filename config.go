@@ -22,6 +22,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	_ "github.com/DanielKrawisz/bmd/database/bdb"
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
+	"github.com/DanielKrawisz/bmd/rpc"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/go-socks/socks"
 	flags "github.com/jessevdk/go-flags"
@@ -140,7 +141,7 @@ type Config struct {
 	RPCCert         string        `long:"rpccert" description:"File containing the certificate file"`
 	RPCKey          string        `long:"rpckey" description:"File containing the certificate key"`
 	RPCMaxClients   int           `long:"rpcmaxclients" description:"Max number of RPC clients"`
-	DisableRPC      bool          `long:"norpc" description:"Disable built-in RPC server -- NOTE: The RPC server is disabled by default if no rpcuser/rpcpass or rpclimituser/rpclimitpass is specified"`
+	EnableRPC       bool          `long:"rpc" description:"Enable built-in RPC server -- NOTE: The RPC server is disabled by default if no rpcuser/rpcpass or rpclimituser/rpclimitpass is specified"`
 	DisableTLS      bool          `long:"notls" description:"Disable TLS for the RPC server -- NOTE: This is only allowed if the RPC server is bound to localhost"`
 	DisableDNSSeed  bool          `long:"nodnsseed" description:"Disable DNS seeding for peers"`
 	ExternalIPs     []string      `long:"externalip" description:"Add an ip to the list of local addresses we claim to listen on to peers"`
@@ -167,6 +168,21 @@ type Config struct {
 	oniondial       func(string, string) (net.Conn, error)
 	dial            func(string, string) (net.Conn, error)
 	dnsSeeds        []string
+}
+
+// RPCConfig returns an rpc.Config type constructed from the Config.
+func (cfg *Config) RPCConfig() *rpc.Config {
+	return &rpc.Config{
+		DisableTLS: cfg.DisableTLS,
+		Key:        cfg.RPCKey,
+		Cert:       cfg.RPCCert,
+		User:       cfg.RPCUser,
+		Pass:       cfg.RPCPass,
+		LimitUser:  cfg.RPCLimitUser,
+		LimitPass:  cfg.RPCLimitPass,
+		MaxClients: uint32(cfg.RPCMaxClients),
+		Listeners:  cfg.RPCListeners,
+	}
 }
 
 // cleanAndExpandPath expands environment variables and leading ~ in the
@@ -312,16 +328,6 @@ func normalizeAddresses(addrs []string, defaultPort int) []string {
 	return removeDuplicateAddresses(addrs)
 }
 
-// filesExists reports whether the named file or directory exists.
-func fileExists(name string) bool {
-	if _, err := os.Stat(name); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
-}
-
 // createDir is used by loadConfig to create bmd home and data directories and
 // report errors back, if any.
 func createDir(path, name string) error {
@@ -424,7 +430,7 @@ func LoadConfig(appName string, args []string) (*Config, []string, error) {
 	var configFileError error
 	parser := newConfigParser(&cfg, appName, flags.Default)
 	// If the default location is specified, then the file isn't required to exist.
-	if preCfg.ConfigFile != defaultConfigFile || fileExists(preCfg.ConfigFile) {
+	if preCfg.ConfigFile != defaultConfigFile || rpc.FileExists(preCfg.ConfigFile) {
 
 		err = flags.NewIniParser(parser).ParseFile(preCfg.ConfigFile)
 
@@ -577,12 +583,12 @@ func LoadConfig(appName string, args []string) (*Config, []string, error) {
 
 	// The RPC server is disabled if no username or password is provided.
 	if (cfg.RPCUser == "" || cfg.RPCPass == "") &&
-		(cfg.RPCLimitUser == "" || cfg.RPCLimitPass == "") {
-		cfg.DisableRPC = true
+		(cfg.RPCLimitUser == "" || cfg.RPCLimitPass == "") && cfg.EnableRPC {
+		return nil, nil, errors.New("Must enable rpc in order to set username and password.")
 	}
 
 	// Default RPC to listen on localhost only.
-	if !cfg.DisableRPC && len(cfg.RPCListeners) == 0 {
+	if cfg.EnableRPC && len(cfg.RPCListeners) == 0 {
 		addrs, err := net.LookupHost("localhost")
 		if err != nil {
 			return nil, nil, err
@@ -604,7 +610,7 @@ func LoadConfig(appName string, args []string) (*Config, []string, error) {
 
 	// Only allow TLS to be disabled if the RPC is bound to localhost
 	// addresses.
-	if !cfg.DisableRPC && cfg.DisableTLS {
+	if cfg.EnableRPC && cfg.DisableTLS {
 		allowedTLSListeners := map[string]struct{}{
 			"localhost": struct{}{},
 			"127.0.0.1": struct{}{},

@@ -12,7 +12,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"math"
 	mrand "math/rand"
 	"net"
@@ -26,6 +25,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmd/objmgr"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmd/rpc"
 	"github.com/DanielKrawisz/bmutil/wire"
 )
 
@@ -188,7 +188,7 @@ func (s *server) DisconnectPeer(p *peer.Peer) {
 // NotifyObject notifies the rpc server of a new object. Part of the
 // objmgr.server interface.
 func (s *server) NotifyObject(counter wire.ObjectType) {
-	if !cfg.DisableRPC {
+	if cfg.EnableRPC {
 		s.rpcServer.NotifyObject(counter)
 	}
 }
@@ -582,7 +582,7 @@ func (s *server) Start() {
 	}
 
 	// Start RPC server.
-	if !cfg.DisableRPC {
+	if cfg.EnableRPC {
 		s.wg.Add(1)
 		s.rpcServer.Start()
 	}
@@ -609,7 +609,7 @@ func (s *server) Stop() error {
 	}
 
 	// Stop RPC server.
-	if !cfg.DisableRPC {
+	if cfg.EnableRPC {
 		err := s.rpcServer.Stop()
 		s.wg.Done()
 		if err != nil {
@@ -623,47 +623,6 @@ func (s *server) Stop() error {
 // WaitForShutdown blocks until the main listener and peer handlers are stopped.
 func (s *server) WaitForShutdown() {
 	s.wg.Wait()
-}
-
-// parseListeners splits the list of listen addresses passed in addrs into
-// IPv4 and IPv6 slices and returns them. This allows easy creation of the
-// listeners on the correct interface "tcp4" and "tcp6". It also properly
-// detects addresses which apply to "all interfaces" and adds the address to
-// both slices.
-func parseListeners(addrs []string) ([]string, []string, error) {
-	ipv4ListenAddrs := make([]string, 0, len(addrs)*2)
-	ipv6ListenAddrs := make([]string, 0, len(addrs)*2)
-
-	for _, addr := range addrs {
-		host, _, err := net.SplitHostPort(addr)
-		if err != nil {
-			// Shouldn't happen due to already being normalized.
-			return nil, nil, err
-		}
-
-		// Empty host or host of * on plan9 is both IPv4 and IPv6.
-		if host == "" || (host == "*" && runtime.GOOS == "plan9") {
-			ipv4ListenAddrs = append(ipv4ListenAddrs, addr)
-			ipv6ListenAddrs = append(ipv6ListenAddrs, addr)
-			continue
-		}
-
-		// Parse the IP.
-		ip := net.ParseIP(host)
-		if ip == nil {
-			return nil, nil, fmt.Errorf("'%s' is not a "+
-				"valid IP address", host)
-		}
-
-		// To4 returns nil when the IP is not an IPv4 address, so use
-		// this determine the address type.
-		if ip.To4() == nil {
-			ipv6ListenAddrs = append(ipv6ListenAddrs, addr)
-		} else {
-			ipv4ListenAddrs = append(ipv4ListenAddrs, addr)
-		}
-	}
-	return ipv4ListenAddrs, ipv6ListenAddrs, nil
 }
 
 // upnpUpdateThread renews the port mapping lease from the router after every
@@ -757,7 +716,7 @@ func newServer(listenAddrs []string, db database.Db,
 	var listeners []peer.Listener
 	var nat NAT
 	if !cfg.DisableListen {
-		ipv4Addrs, ipv6Addrs, err := parseListeners(listenAddrs)
+		ipv4Addrs, ipv6Addrs, err := rpc.ParseListeners(listenAddrs)
 		if err != nil {
 			return nil, err
 		}
@@ -883,8 +842,8 @@ func newServer(listenAddrs []string, db database.Db,
 	}
 	s.objectManager = objmgr.NewObjectManager(&s, s.db, cfg.RequestExpire, cfg.CleanupInterval)
 
-	if !cfg.DisableRPC {
-		s.rpcServer, err = newRPCServer(cfg.RPCListeners, &s)
+	if cfg.EnableRPC {
+		s.rpcServer, err = newRPCServer(&s, cfg.RPCConfig())
 		if err != nil {
 			return nil, err
 		}
