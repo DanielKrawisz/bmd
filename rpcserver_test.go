@@ -29,9 +29,7 @@ const (
 	rpcLimitPass = "limit"
 )
 
-var serv *server
-
-func rpcTests(t *testing.T) {
+func rpcTests(t *testing.T, s *server) {
 	// Order of the tests is important. Do not change.
 	testRPCAuth(t)
 
@@ -44,7 +42,7 @@ func rpcTests(t *testing.T) {
 	defer conn.Close()
 	c := pb.NewBmdClient(conn)
 
-	testRPCSendObject(c, t)
+	testRPCSendObject(s, c, t)
 	testRPCGetObjects(c, t)
 }
 
@@ -95,7 +93,7 @@ func testRPCAuthFailure(c pb.BmdClient, t *testing.T, expectedCode codes.Code) {
 }
 
 // Test SendObject.
-func testRPCSendObject(c pb.BmdClient, t *testing.T) {
+func testRPCSendObject(serv *server, c pb.BmdClient, t *testing.T) {
 	errorTests := [][]byte{
 		[]byte{},                       // empty
 		[]byte{0x00, 0x00, 0x00, 0x00}, // invalid object
@@ -190,6 +188,7 @@ func testRPCGetObjects(c pb.BmdClient, t *testing.T) {
 }
 
 func TestRPCConnection(t *testing.T) {
+
 	// Address for mock listener to pass to server. The server
 	// needs at least one listener or it won't start so we mock it.
 	remoteAddr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8445}
@@ -208,11 +207,9 @@ func TestRPCConnection(t *testing.T) {
 	// Set RPC listener.
 	cfg.RPCListeners = []string{net.JoinHostPort("", "8442")}
 
-	var err error
-
 	// Create a server.
 	listeners := []string{net.JoinHostPort("", "8445")}
-	serv, err = newServer(listeners, getMemDb([]obj.Object{}),
+	serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 		MockListen([]*MockListener{
 			NewMockListener(remoteAddr, make(chan peer.Connection), make(chan struct{}, 1))}), nil)
 
@@ -222,7 +219,7 @@ func TestRPCConnection(t *testing.T) {
 	serv.Start()
 
 	// Run the actual tests.
-	rpcTests(t)
+	rpcTests(t, serv)
 
 	// Cleanup.
 	serv.Stop()

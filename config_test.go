@@ -8,69 +8,43 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 )
 
-// If config files exist while we are doing
-var oldDefaultConfigFile []byte
-var oldConfigFile []byte
-var oldConfigFilename *string
-
-func setup(defaultConfigContents, configFileContents, configFilename *string) error {
+func setup(dataDir string, defaultConfigContents, configFileContents, configFilename *string) error {
 	var err error
 
-	// Check if a default config file exists. If so, save it and remove it.
-	if _, err = os.Stat(defaultConfigFile); !os.IsNotExist(err) {
-		oldDefaultConfigFile, err = ioutil.ReadFile(defaultConfigFile)
-
-		if err != nil {
-			return err
-		}
-
-		err = os.Remove(defaultConfigFile)
-		if err != nil {
-			oldDefaultConfigFile = nil
-			return err
-		}
-	}
+	defaultConfigFile := filepath.Join(dataDir, defaultConfigFilename)
 
 	// Check if defaultConfigContents is set. If so, make a config file.
 	if defaultConfigContents != nil {
 		err = ioutil.WriteFile(defaultConfigFile, []byte(*defaultConfigContents), 0644)
 		if err != nil {
-			cleanup()
 			return nil
 		}
 	}
 
 	// Check if configFilePath is set and is not equal to the default
 	// path.
-	if configFilename == nil || *configFilename == defaultConfigFile {
+	if configFilename == nil || *configFilename == defaultConfigFilename {
 		return nil
 	}
 
-	oldConfigFilename = configFilename
+	configFile := filepath.Join(dataDir, *configFilename)
 
-	// If the file exists, save it.
-	if _, err = os.Stat(*configFilename); !os.IsNotExist(err) {
-		oldConfigFile, err = ioutil.ReadFile(*configFilename)
-
+	// If the file exists, remove it.
+	if _, err = os.Stat(configFile); !os.IsNotExist(err) {
+		err = os.Remove(configFile)
 		if err != nil {
-			return err
-		}
-
-		err = os.Remove(*configFilename)
-		if err != nil {
-			oldConfigFile = nil
 			return err
 		}
 	}
 
 	if configFileContents != nil {
-		err = ioutil.WriteFile(*configFilename, []byte(*configFileContents), 0644)
+		err = ioutil.WriteFile(configFile, []byte(*configFileContents), 0644)
 		if err != nil {
-			cleanup()
 			return nil
 		}
 	}
@@ -78,34 +52,14 @@ func setup(defaultConfigContents, configFileContents, configFilename *string) er
 	return nil
 }
 
-func cleanup() {
-	if oldConfigFile == nil {
-		if _, err := os.Stat(defaultConfigFile); !os.IsNotExist(err) {
-			os.Remove(defaultConfigFile)
-		}
-	} else {
-		ioutil.WriteFile(defaultConfigFile, oldDefaultConfigFile, 0644)
-	}
-
-	if oldConfigFilename != nil {
-		if oldConfigFile == nil {
-			os.Remove(*oldConfigFilename)
-		} else {
-			ioutil.WriteFile(*oldConfigFilename, oldDefaultConfigFile, 0644)
-		}
-	}
-
-	oldConfigFile = nil
-	oldConfigFilename = nil
-	oldDefaultConfigFile = nil
-}
-
 func testConfig(t *testing.T, testID int, expected uint64, cmdLine *uint64, defaultConfig *uint64, config *uint64, configFile *string) {
 	var defaultConfigContents *string
 	var configFileContents *string
 	var commandLine []string
 
-	defer cleanup()
+	// Ensures that the temp directory is deleted.
+	Config := DefaultConfig()
+	defer resetCfg(Config)()
 
 	// first construct the command-line arguments.
 	if cmdLine != nil {
@@ -128,19 +82,19 @@ func testConfig(t *testing.T, testID int, expected uint64, cmdLine *uint64, defa
 	}
 
 	// Set up the test.
-	err := setup(defaultConfigContents, configFileContents, configFile)
+	err := setup(Config.DataDir, defaultConfigContents, configFileContents, configFile)
 	if err != nil {
 		t.Fail()
 	}
 
-	cfg, _, err := LoadConfig("test", commandLine)
+	_, err = LoadConfig("test", Config, commandLine)
 
-	if cfg == nil {
+	if err != nil {
 		t.Errorf("Error, test id %d: nil config returned! %s", testID, err.Error())
 		return
 	}
 
-	if cfg.MaxPeers != int(expected) {
+	if Config.MaxPeers != int(expected) {
 		t.Errorf("Error, test id %d: expected %d got %d.", testID, expected, cfg.MaxPeers)
 	}
 
@@ -161,14 +115,14 @@ func TestLoadConfig(t *testing.T) {
 	// Test that an option is correctly set when specified
 	// in the default config file without a command line
 	// option set.
-	cfg := "altbmd.conf"
+	file := "altbmd.conf"
 	testConfig(t, 3, q, nil, &q, nil, nil)
-	testConfig(t, 4, q, nil, nil, &q, &cfg)
+	testConfig(t, 4, q, nil, nil, &q, &file)
 
 	// Test that an option is correctly set when specified
 	// on the command line and that it overwrites the
 	// option in the config file.
 	var z uint64 = 39
 	testConfig(t, 5, q, &q, &z, nil, nil)
-	testConfig(t, 6, q, &q, nil, &z, &cfg)
+	testConfig(t, 6, q, &q, nil, &z, &file)
 }
