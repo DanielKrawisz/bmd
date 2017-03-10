@@ -48,7 +48,6 @@ const (
 
 var (
 	defaultDataDir     = btcutil.AppDataDir("bmd", false)
-	defaultConfigFile  = filepath.Join(defaultDataDir, defaultConfigFilename)
 	knownDbTypes       = database.SupportedDBs()
 	defaultRPCKeyFile  = filepath.Join(defaultDataDir, "rpc.key")
 	defaultRPCCertFile = filepath.Join(defaultDataDir, "rpc.cert")
@@ -70,6 +69,8 @@ var (
 		"24.188.198.204:8111",
 		"109.147.204.113:1195",
 		"178.11.46.221:8444"}
+
+	ErrMissingConfig = errors.New("Config file missing.")
 )
 
 // Filesize is a custom configuration option for go-flags. It is used to parse
@@ -183,6 +184,299 @@ func (cfg *Config) RPCConfig() *rpc.Config {
 		MaxClients: uint32(cfg.RPCMaxClients),
 		Listeners:  cfg.RPCListeners,
 	}
+}
+
+func (cfg *Config) Validate(appName string) error {
+	funcName := "Validate"
+	usageMessage := fmt.Sprintf("Use %s -h to show usage", appName)
+
+	// Create the data and log directories if they don't already exist.
+	cfg.DataDir = cleanAndExpandPath(cfg.DataDir)
+	err := createDir(cfg.DataDir, "data")
+	if err != nil {
+		return err
+	}
+
+	cfg.LogDir = cleanAndExpandPath(cfg.LogDir)
+	err = createDir(cfg.LogDir, "log")
+	if err != nil {
+		return err
+	}
+
+	// Special show command to list supported subsystems and exit.
+	if cfg.DebugLevel == "show" {
+		fmt.Println("Supported subsystems", supportedSubsystems())
+		os.Exit(0)
+	}
+
+	// Initialize logging at the default logging level.
+	initSeelogLogger(filepath.Join(cfg.LogDir, defaultLogFilename))
+	setLogLevels(defaultLogLevel)
+
+	// Parse, validate, and set debug log level(s).
+	if err := parseAndSetDebugLevels(cfg.DebugLevel); err != nil {
+		err := fmt.Errorf("%s: %v", funcName, err.Error())
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// Validate database type.
+	if !validDbType(cfg.DbType) {
+		str := "%s: The specified database type [%v] is invalid -- " +
+			"supported types %v"
+		err := fmt.Errorf(str, funcName, cfg.DbType, knownDbTypes)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// Validate profile port number
+	if cfg.Profile != "" {
+		profilePort, err := strconv.Atoi(cfg.Profile)
+		if err != nil || profilePort < 1024 || profilePort > 65535 {
+			str := "%s: The profile port must be between 1024 and 65535"
+			err := fmt.Errorf(str, funcName)
+			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, usageMessage)
+			return err
+		}
+	}
+
+	// Don't allow request expire times that are too short.
+	if cfg.RequestExpire < time.Duration(10*time.Second) {
+		str := "%s: The requestexpire option may not be less than 10s -- parsed [%v]"
+		err := fmt.Errorf(str, funcName, cfg.RequestExpire)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// Don't allow cleanup times that are too short.
+	if cfg.CleanupInterval < time.Duration(20*time.Minute) {
+		str := "%s: The cleanupinterval option may not be less than 20m -- parsed [%v]"
+		err := fmt.Errorf(str, funcName, cfg.RequestExpire)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// --addPeer and --connect do not mix.
+	if len(cfg.AddPeers) > 0 && len(cfg.ConnectPeers) > 0 {
+		str := "%s: the --addpeer and --connect options can not be " +
+			"mixed"
+		err := fmt.Errorf(str, funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// Attach the default initial nodes.
+	cfg.AddPeers = append(cfg.AddPeers, defaultInitialNodes...)
+
+	// --proxy or --connect without --listen disables listening.
+	if (cfg.Proxy != "" || len(cfg.ConnectPeers) > 0) &&
+		len(cfg.Listeners) == 0 {
+		cfg.DisableListen = true
+	}
+
+	// Connect means no DNS seeding.
+	if len(cfg.ConnectPeers) > 0 {
+		cfg.DisableDNSSeed = true
+	}
+
+	// Add the default listener if none were specified. The default
+	// listener is all addresses on the listen port for the network
+	// we are to connect to.
+	if len(cfg.Listeners) == 0 {
+		cfg.Listeners = []string{
+			net.JoinHostPort("", strconv.Itoa(defaultPort)),
+		}
+	}
+
+	// Check to make sure limited and admin users don't have the same username
+	if cfg.RPCUser == cfg.RPCLimitUser && cfg.RPCUser != "" {
+		str := "%s: --rpcuser and --rpclimituser must not specify the " +
+			"same username"
+		err := fmt.Errorf(str, funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// Check to make sure limited and admin users don't have the same password
+	if cfg.RPCPass == cfg.RPCLimitPass && cfg.RPCPass != "" {
+		str := "%s: --rpcpass and --rpclimitpass must not specify the " +
+			"same password"
+		err := fmt.Errorf(str, funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// The RPC server is disabled if no username or password is provided.
+	if (cfg.RPCUser == "" || cfg.RPCPass == "") &&
+		(cfg.RPCLimitUser == "" || cfg.RPCLimitPass == "") && cfg.EnableRPC {
+		return errors.New("Must enable rpc in order to set username and password.")
+	}
+
+	// Default RPC to listen on localhost only.
+	if cfg.EnableRPC && len(cfg.RPCListeners) == 0 {
+		addrs, err := net.LookupHost("localhost")
+		if err != nil {
+			return err
+		}
+		cfg.RPCListeners = make([]string, 0, len(addrs))
+		for _, addr := range addrs {
+			addr = net.JoinHostPort(addr, strconv.Itoa(defaultRPCPort))
+			cfg.RPCListeners = append(cfg.RPCListeners, addr)
+		}
+	}
+
+	// Add default port to all listener addresses if needed and remove
+	// duplicate addresses.
+	cfg.Listeners = normalizeAddresses(cfg.Listeners, defaultPort)
+
+	// Add default port to all rpc listener addresses if needed and remove
+	// duplicate addresses.
+	cfg.RPCListeners = normalizeAddresses(cfg.RPCListeners, defaultRPCPort)
+
+	// Only allow TLS to be disabled if the RPC is bound to localhost
+	// addresses.
+	if cfg.EnableRPC && cfg.DisableTLS {
+		allowedTLSListeners := map[string]struct{}{
+			"localhost": struct{}{},
+			"127.0.0.1": struct{}{},
+			"::1":       struct{}{},
+		}
+		for _, addr := range cfg.RPCListeners {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				str := "%s: RPC listen interface '%s' is " +
+					"invalid: %v"
+				err := fmt.Errorf(str, funcName, addr, err)
+				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(os.Stderr, usageMessage)
+				return err
+			}
+			if _, ok := allowedTLSListeners[host]; !ok {
+				str := "%s: the --notls option may not be used " +
+					"when binding RPC to non localhost " +
+					"addresses: %s"
+				err := fmt.Errorf(str, funcName, addr)
+				fmt.Fprintln(os.Stderr, err)
+				fmt.Fprintln(os.Stderr, usageMessage)
+				return err
+			}
+		}
+	}
+
+	// Add default port to all added peer addresses if needed and remove
+	// duplicate addresses.
+	cfg.AddPeers = normalizeAddresses(cfg.AddPeers, defaultPort)
+	cfg.ConnectPeers = normalizeAddresses(cfg.ConnectPeers, defaultPort)
+
+	// Tor stream isolation requires either proxy or onion proxy to be set.
+	if cfg.TorIsolation && cfg.Proxy == "" && cfg.OnionProxy == "" {
+		str := "%s: Tor stream isolation requires either proxy or " +
+			"onionproxy to be set"
+		err := fmt.Errorf(str, funcName)
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, usageMessage)
+		return err
+	}
+
+	// Setup dial and DNS resolution (lookup) functions depending on the
+	// specified options.  The default is to use the standard net.Dial
+	// function as well as the system DNS resolver.  When a proxy is
+	// specified, the dial function is set to the proxy specific dial
+	// function and the lookup is set to use tor (unless --noonion is
+	// specified in which case the system DNS resolver is used).
+	cfg.dial = net.Dial
+	cfg.lookup = net.LookupIP
+	if cfg.Proxy != "" {
+		_, _, err := net.SplitHostPort(cfg.Proxy)
+		if err != nil {
+			str := "%s: Proxy address '%s' is invalid: %v"
+			err := fmt.Errorf(str, funcName, cfg.Proxy, err)
+			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, usageMessage)
+			return err
+		}
+
+		if cfg.TorIsolation &&
+			(cfg.ProxyUser != "" || cfg.ProxyPass != "") {
+			bmdLog.Warn("Tor isolation set -- overriding " +
+				"specified proxy user credentials")
+		}
+
+		proxy := &socks.Proxy{
+			Addr:         cfg.Proxy,
+			Username:     cfg.ProxyUser,
+			Password:     cfg.ProxyPass,
+			TorIsolation: cfg.TorIsolation,
+		}
+		cfg.dial = proxy.Dial
+		if !cfg.NoOnion {
+			cfg.lookup = func(host string) ([]net.IP, error) {
+				return torLookupIP(host, cfg.Proxy)
+			}
+		}
+	}
+
+	// Setup onion address dial and DNS resolution (lookup) functions
+	// depending on the specified options.  The default is to use the
+	// same dial and lookup functions selected above.  However, when an
+	// onion-specific proxy is specified, the onion address dial and
+	// lookup functions are set to use the onion-specific proxy while
+	// leaving the normal dial and lookup functions as selected above.
+	// This allows .onion address traffic to be routed through a different
+	// proxy than normal traffic.
+	if cfg.OnionProxy != "" {
+		_, _, err := net.SplitHostPort(cfg.OnionProxy)
+		if err != nil {
+			str := "%s: Onion proxy address '%s' is invalid: %v"
+			err := fmt.Errorf(str, funcName, cfg.OnionProxy, err)
+			fmt.Fprintln(os.Stderr, err)
+			fmt.Fprintln(os.Stderr, usageMessage)
+			return err
+		}
+
+		if cfg.TorIsolation &&
+			(cfg.OnionProxyUser != "" || cfg.OnionProxyPass != "") {
+			bmdLog.Warn("Tor isolation set -- overriding " +
+				"specified onionproxy user credentials ")
+		}
+
+		cfg.oniondial = func(a, b string) (net.Conn, error) {
+			proxy := &socks.Proxy{
+				Addr:         cfg.OnionProxy,
+				Username:     cfg.OnionProxyUser,
+				Password:     cfg.OnionProxyPass,
+				TorIsolation: cfg.TorIsolation,
+			}
+			return proxy.Dial(a, b)
+		}
+		cfg.onionlookup = func(host string) ([]net.IP, error) {
+			return torLookupIP(host, cfg.OnionProxy)
+		}
+	} else {
+		cfg.oniondial = cfg.dial
+		cfg.onionlookup = cfg.lookup
+	}
+
+	// Specifying --noonion means the onion address dial and DNS resolution
+	// (lookup) functions result in an error.
+	if cfg.NoOnion {
+		cfg.oniondial = func(a, b string) (net.Conn, error) {
+			return nil, errors.New("tor has been disabled")
+		}
+		cfg.onionlookup = func(a string) ([]net.IP, error) {
+			return nil, errors.New("tor has been disabled")
+		}
+	}
+
+	return nil
 }
 
 // cleanAndExpandPath expands environment variables and leading ~ in the
@@ -362,6 +656,43 @@ func newConfigParser(cfg *Config, appName string, options flags.Options) *flags.
 	return p
 }
 
+// parseFile reads command-line options from a file into a parser.
+func parseFile(parser *flags.Parser, name, path string) error {
+
+	ConfigFile := filepath.Join(path, name)
+	if rpc.FileExists(ConfigFile) {
+		return flags.NewIniParser(parser).ParseFile(ConfigFile)
+	}
+
+	// If the default location is specified, then the file isn't required to exist.
+	if name != defaultConfigFilename {
+		return ErrMissingConfig
+	}
+
+	return nil
+}
+
+func DefaultConfig() *Config {
+	// Default config.
+	return &Config{
+		ConfigFile:      defaultConfigFilename,
+		DebugLevel:      defaultLogLevel,
+		MaxPeers:        defaultMaxPeers,
+		RPCMaxClients:   defaultMaxRPCClients,
+		DataDir:         defaultDataDir,
+		LogDir:          defaultLogDir,
+		DbType:          defaultDbType,
+		RPCKey:          defaultRPCKeyFile,
+		RPCCert:         defaultRPCCertFile,
+		MaxDownPerPeer:  defaultMaxDownPerPeer,
+		MaxUpPerPeer:    defaultMaxUpPerPeer,
+		MaxOutbound:     defaultMaxOutbound,
+		RequestExpire:   defaultRequestTimeout,
+		dnsSeeds:        defaultDNSSeeds,
+		CleanupInterval: defaultCleanupInterval,
+	}
+}
+
 // loadConfig initializes and parses the config using a config file and command
 // line options. isTest is used to ignore command line; meant to be used
 // during testing.
@@ -380,42 +711,30 @@ func loadConfig() (*Config, []string, error) {
 	appName := filepath.Base(os.Args[0])
 	appName = strings.TrimSuffix(appName, filepath.Ext(appName))
 
-	return LoadConfig(appName, os.Args[1:])
+	cfg := DefaultConfig()
+	remaining, err := LoadConfig(appName, cfg, os.Args[1:])
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, remaining, nil
 }
 
-// LoadConfig creates the config type from the command-line arguments.
-func LoadConfig(appName string, args []string) (*Config, []string, error) {
-	// Default config.
-	cfg := Config{
-		ConfigFile:      defaultConfigFile,
-		DebugLevel:      defaultLogLevel,
-		MaxPeers:        defaultMaxPeers,
-		RPCMaxClients:   defaultMaxRPCClients,
-		DataDir:         defaultDataDir,
-		LogDir:          defaultLogDir,
-		DbType:          defaultDbType,
-		RPCKey:          defaultRPCKeyFile,
-		RPCCert:         defaultRPCCertFile,
-		MaxDownPerPeer:  defaultMaxDownPerPeer,
-		MaxUpPerPeer:    defaultMaxUpPerPeer,
-		MaxOutbound:     defaultMaxOutbound,
-		RequestExpire:   defaultRequestTimeout,
-		dnsSeeds:        defaultDNSSeeds,
-		CleanupInterval: defaultCleanupInterval,
-	}
+// LoadConfig creates the config type from the command-line arguments
+// starting with the given Config as defaults.
+func LoadConfig(appName string, cfg *Config, args []string) ([]string, error) {
 
 	// Pre-parse the command line options to see if an alternative config
 	// file or the version flag was specified. Any errors aside from the
 	// help message error can be ignored here since they will be caught by
 	// the final parse below.
-	preCfg := cfg
+	preCfg := *cfg
 	var err error
 	preParser := newConfigParser(&preCfg, appName, flags.HelpFlag)
 	_, err = preParser.ParseArgs(args)
 	if err != nil {
 		if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
 			fmt.Fprintln(os.Stderr, err)
-			return nil, nil, err
+			return nil, err
 		}
 	}
 
@@ -428,19 +747,14 @@ func LoadConfig(appName string, args []string) (*Config, []string, error) {
 
 	// Load additional config from file.
 	var configFileError error
-	parser := newConfigParser(&cfg, appName, flags.Default)
-	// If the default location is specified, then the file isn't required to exist.
-	if preCfg.ConfigFile != defaultConfigFile || rpc.FileExists(preCfg.ConfigFile) {
-
-		err = flags.NewIniParser(parser).ParseFile(preCfg.ConfigFile)
-
-		if err != nil {
-			if _, ok := err.(*os.PathError); !ok {
-				fmt.Fprintf(os.Stderr, "Error parsing config "+
-					"file: %v\n", err)
-				fmt.Fprintln(os.Stderr, usageMessage)
-				return nil, nil, err
-			}
+	parser := newConfigParser(cfg, appName, flags.Default)
+	err = parseFile(parser, preCfg.ConfigFile, preCfg.DataDir)
+	if err != nil {
+		if err != ErrMissingConfig {
+			return nil, err
+		} else {
+			// A missing config file is only a warning, so we
+			// save it until the end to report to the user.
 			configFileError = err
 		}
 	}
@@ -452,295 +766,12 @@ func LoadConfig(appName string, args []string) (*Config, []string, error) {
 		if e, ok := err.(*flags.Error); !ok || e.Type != flags.ErrHelp {
 			fmt.Fprintln(os.Stderr, usageMessage)
 		}
-		return nil, nil, err
+		return nil, err
 	}
 
-	funcName := "loadConfig"
-
-	// Create the data and log directories if they don't already exist.
-	cfg.DataDir = cleanAndExpandPath(cfg.DataDir)
-	err = createDir(cfg.DataDir, "data")
+	err = cfg.Validate(appName)
 	if err != nil {
-		return nil, nil, err
-	}
-
-	cfg.LogDir = cleanAndExpandPath(cfg.LogDir)
-	err = createDir(cfg.LogDir, "log")
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Special show command to list supported subsystems and exit.
-	if cfg.DebugLevel == "show" {
-		fmt.Println("Supported subsystems", supportedSubsystems())
-		os.Exit(0)
-	}
-
-	// Initialize logging at the default logging level.
-	initSeelogLogger(filepath.Join(cfg.LogDir, defaultLogFilename))
-	setLogLevels(defaultLogLevel)
-
-	// Parse, validate, and set debug log level(s).
-	if err := parseAndSetDebugLevels(cfg.DebugLevel); err != nil {
-		err := fmt.Errorf("%s: %v", funcName, err.Error())
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Validate database type.
-	if !validDbType(cfg.DbType) {
-		str := "%s: The specified database type [%v] is invalid -- " +
-			"supported types %v"
-		err := fmt.Errorf(str, funcName, cfg.DbType, knownDbTypes)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Validate profile port number
-	if cfg.Profile != "" {
-		profilePort, err := strconv.Atoi(cfg.Profile)
-		if err != nil || profilePort < 1024 || profilePort > 65535 {
-			str := "%s: The profile port must be between 1024 and 65535"
-			err := fmt.Errorf(str, funcName)
-			fmt.Fprintln(os.Stderr, err)
-			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
-		}
-	}
-
-	// Don't allow request expire times that are too short.
-	if cfg.RequestExpire < time.Duration(10*time.Second) {
-		str := "%s: The requestexpire option may not be less than 10s -- parsed [%v]"
-		err := fmt.Errorf(str, funcName, cfg.RequestExpire)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Don't allow cleanup times that are too short.
-	if cfg.CleanupInterval < time.Duration(20*time.Minute) {
-		str := "%s: The cleanupinterval option may not be less than 20m -- parsed [%v]"
-		err := fmt.Errorf(str, funcName, cfg.RequestExpire)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// --addPeer and --connect do not mix.
-	if len(cfg.AddPeers) > 0 && len(cfg.ConnectPeers) > 0 {
-		str := "%s: the --addpeer and --connect options can not be " +
-			"mixed"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Attach the default initial nodes.
-	cfg.AddPeers = append(cfg.AddPeers, defaultInitialNodes...)
-
-	// --proxy or --connect without --listen disables listening.
-	if (cfg.Proxy != "" || len(cfg.ConnectPeers) > 0) &&
-		len(cfg.Listeners) == 0 {
-		cfg.DisableListen = true
-	}
-
-	// Connect means no DNS seeding.
-	if len(cfg.ConnectPeers) > 0 {
-		cfg.DisableDNSSeed = true
-	}
-
-	// Add the default listener if none were specified. The default
-	// listener is all addresses on the listen port for the network
-	// we are to connect to.
-	if len(cfg.Listeners) == 0 {
-		cfg.Listeners = []string{
-			net.JoinHostPort("", strconv.Itoa(defaultPort)),
-		}
-	}
-
-	// Check to make sure limited and admin users don't have the same username
-	if cfg.RPCUser == cfg.RPCLimitUser && cfg.RPCUser != "" {
-		str := "%s: --rpcuser and --rpclimituser must not specify the " +
-			"same username"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Check to make sure limited and admin users don't have the same password
-	if cfg.RPCPass == cfg.RPCLimitPass && cfg.RPCPass != "" {
-		str := "%s: --rpcpass and --rpclimitpass must not specify the " +
-			"same password"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// The RPC server is disabled if no username or password is provided.
-	if (cfg.RPCUser == "" || cfg.RPCPass == "") &&
-		(cfg.RPCLimitUser == "" || cfg.RPCLimitPass == "") && cfg.EnableRPC {
-		return nil, nil, errors.New("Must enable rpc in order to set username and password.")
-	}
-
-	// Default RPC to listen on localhost only.
-	if cfg.EnableRPC && len(cfg.RPCListeners) == 0 {
-		addrs, err := net.LookupHost("localhost")
-		if err != nil {
-			return nil, nil, err
-		}
-		cfg.RPCListeners = make([]string, 0, len(addrs))
-		for _, addr := range addrs {
-			addr = net.JoinHostPort(addr, strconv.Itoa(defaultRPCPort))
-			cfg.RPCListeners = append(cfg.RPCListeners, addr)
-		}
-	}
-
-	// Add default port to all listener addresses if needed and remove
-	// duplicate addresses.
-	cfg.Listeners = normalizeAddresses(cfg.Listeners, defaultPort)
-
-	// Add default port to all rpc listener addresses if needed and remove
-	// duplicate addresses.
-	cfg.RPCListeners = normalizeAddresses(cfg.RPCListeners, defaultRPCPort)
-
-	// Only allow TLS to be disabled if the RPC is bound to localhost
-	// addresses.
-	if cfg.EnableRPC && cfg.DisableTLS {
-		allowedTLSListeners := map[string]struct{}{
-			"localhost": struct{}{},
-			"127.0.0.1": struct{}{},
-			"::1":       struct{}{},
-		}
-		for _, addr := range cfg.RPCListeners {
-			host, _, err := net.SplitHostPort(addr)
-			if err != nil {
-				str := "%s: RPC listen interface '%s' is " +
-					"invalid: %v"
-				err := fmt.Errorf(str, funcName, addr, err)
-				fmt.Fprintln(os.Stderr, err)
-				fmt.Fprintln(os.Stderr, usageMessage)
-				return nil, nil, err
-			}
-			if _, ok := allowedTLSListeners[host]; !ok {
-				str := "%s: the --notls option may not be used " +
-					"when binding RPC to non localhost " +
-					"addresses: %s"
-				err := fmt.Errorf(str, funcName, addr)
-				fmt.Fprintln(os.Stderr, err)
-				fmt.Fprintln(os.Stderr, usageMessage)
-				return nil, nil, err
-			}
-		}
-	}
-
-	// Add default port to all added peer addresses if needed and remove
-	// duplicate addresses.
-	cfg.AddPeers = normalizeAddresses(cfg.AddPeers, defaultPort)
-	cfg.ConnectPeers = normalizeAddresses(cfg.ConnectPeers, defaultPort)
-
-	// Tor stream isolation requires either proxy or onion proxy to be set.
-	if cfg.TorIsolation && cfg.Proxy == "" && cfg.OnionProxy == "" {
-		str := "%s: Tor stream isolation requires either proxy or " +
-			"onionproxy to be set"
-		err := fmt.Errorf(str, funcName)
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, usageMessage)
-		return nil, nil, err
-	}
-
-	// Setup dial and DNS resolution (lookup) functions depending on the
-	// specified options.  The default is to use the standard net.Dial
-	// function as well as the system DNS resolver.  When a proxy is
-	// specified, the dial function is set to the proxy specific dial
-	// function and the lookup is set to use tor (unless --noonion is
-	// specified in which case the system DNS resolver is used).
-	cfg.dial = net.Dial
-	cfg.lookup = net.LookupIP
-	if cfg.Proxy != "" {
-		_, _, err := net.SplitHostPort(cfg.Proxy)
-		if err != nil {
-			str := "%s: Proxy address '%s' is invalid: %v"
-			err := fmt.Errorf(str, funcName, cfg.Proxy, err)
-			fmt.Fprintln(os.Stderr, err)
-			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
-		}
-
-		if cfg.TorIsolation &&
-			(cfg.ProxyUser != "" || cfg.ProxyPass != "") {
-			bmdLog.Warn("Tor isolation set -- overriding " +
-				"specified proxy user credentials")
-		}
-
-		proxy := &socks.Proxy{
-			Addr:         cfg.Proxy,
-			Username:     cfg.ProxyUser,
-			Password:     cfg.ProxyPass,
-			TorIsolation: cfg.TorIsolation,
-		}
-		cfg.dial = proxy.Dial
-		if !cfg.NoOnion {
-			cfg.lookup = func(host string) ([]net.IP, error) {
-				return torLookupIP(host, cfg.Proxy)
-			}
-		}
-	}
-
-	// Setup onion address dial and DNS resolution (lookup) functions
-	// depending on the specified options.  The default is to use the
-	// same dial and lookup functions selected above.  However, when an
-	// onion-specific proxy is specified, the onion address dial and
-	// lookup functions are set to use the onion-specific proxy while
-	// leaving the normal dial and lookup functions as selected above.
-	// This allows .onion address traffic to be routed through a different
-	// proxy than normal traffic.
-	if cfg.OnionProxy != "" {
-		_, _, err := net.SplitHostPort(cfg.OnionProxy)
-		if err != nil {
-			str := "%s: Onion proxy address '%s' is invalid: %v"
-			err := fmt.Errorf(str, funcName, cfg.OnionProxy, err)
-			fmt.Fprintln(os.Stderr, err)
-			fmt.Fprintln(os.Stderr, usageMessage)
-			return nil, nil, err
-		}
-
-		if cfg.TorIsolation &&
-			(cfg.OnionProxyUser != "" || cfg.OnionProxyPass != "") {
-			bmdLog.Warn("Tor isolation set -- overriding " +
-				"specified onionproxy user credentials ")
-		}
-
-		cfg.oniondial = func(a, b string) (net.Conn, error) {
-			proxy := &socks.Proxy{
-				Addr:         cfg.OnionProxy,
-				Username:     cfg.OnionProxyUser,
-				Password:     cfg.OnionProxyPass,
-				TorIsolation: cfg.TorIsolation,
-			}
-			return proxy.Dial(a, b)
-		}
-		cfg.onionlookup = func(host string) ([]net.IP, error) {
-			return torLookupIP(host, cfg.OnionProxy)
-		}
-	} else {
-		cfg.oniondial = cfg.dial
-		cfg.onionlookup = cfg.lookup
-	}
-
-	// Specifying --noonion means the onion address dial and DNS resolution
-	// (lookup) functions result in an error.
-	if cfg.NoOnion {
-		cfg.oniondial = func(a, b string) (net.Conn, error) {
-			return nil, errors.New("tor has been disabled")
-		}
-		cfg.onionlookup = func(a string) ([]net.IP, error) {
-			return nil, errors.New("tor has been disabled")
-		}
+		return nil, err
 	}
 
 	// Warn about missing config file only after all other configuration is
@@ -750,7 +781,7 @@ func LoadConfig(appName string, args []string) (*Config, []string, error) {
 		bmdLog.Warnf("%v", configFileError)
 	}
 
-	return &cfg, remainingArgs, nil
+	return remainingArgs, nil
 }
 
 // bmdDial connects to the address on the named network using the appropriate
