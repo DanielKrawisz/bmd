@@ -169,6 +169,8 @@ type Config struct {
 	oniondial       func(string, string) (net.Conn, error)
 	dial            func(string, string) (net.Conn, error)
 	dnsSeeds        []string
+
+	ObjectStats bool `long:"objectstats" hidden:"true"`
 }
 
 // RPCConfig returns an rpc.Config type constructed from the Config.

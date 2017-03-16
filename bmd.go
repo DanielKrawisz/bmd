@@ -77,7 +77,7 @@ func bmdMain() error {
 	}
 
 	// Load object database.
-	db, err := setupDB(cfg.DbType, objectDbPath(cfg.DbType))
+	db, err := setupDB(cfg.DbType, objectDbPath(cfg.DbType), cfg.ObjectStats)
 	if err != nil {
 		dbLog.Errorf("Failed to initialize database: %v", err)
 		return err
@@ -140,13 +140,19 @@ func objectDbPath(dbType string) string {
 
 // setupDB loads (or creates when needed) the object database taking into
 // account the selected database backend.
-func setupDB(dbType, dbPath string) (database.Db, error) {
+func setupDB(dbType, dbPath string, trackObjects bool) (database.Db, error) {
 	// The memdb backend does not have a file path associated with it, so
 	// handle it uniquely.
 	if dbType == "memdb" {
 		return database.OpenDB(dbType)
 	}
-	db, err := database.OpenDB(dbType, dbPath)
+	var err error
+	var db database.Db
+	if trackObjects {
+		db, err = database.OpenDB(dbType, dbPath, filepath.Join(cfg.DataDir, "objlogs.txt"))
+	} else {
+		db, err = database.OpenDB(dbType, dbPath)
+	}
 	if err != nil {
 		return nil, err
 	}

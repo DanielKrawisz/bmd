@@ -11,6 +11,7 @@ package bdb
 import (
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
@@ -30,13 +31,9 @@ func init() {
 	database.AddDBDriver(driver)
 }
 
-// parseArgs parses the arguments from the database package Open/Create methods.
-func parseArgs(funcName string, args ...interface{}) (string, error) {
-	if len(args) != 1 {
-		return "", fmt.Errorf("Invalid arguments to bdb.%s -- "+
-			"expected database path string", funcName)
-	}
-	dbPath, ok := args[0].(string)
+// parseString parses the arguments from the database package Open/Create methods.
+func parseString(funcName string, arg interface{}) (string, error) {
+	dbPath, ok := arg.(string)
 	if !ok {
 		return "", fmt.Errorf("First argument to bdb.%s is invalid -- "+
 			"expected database path string", funcName)
@@ -46,7 +43,19 @@ func parseArgs(funcName string, args ...interface{}) (string, error) {
 
 // OpenDB opens a database, initializing it if necessary.
 func OpenDB(args ...interface{}) (database.Db, error) {
-	dbPath, err := parseArgs("OpenDB", args...)
+	var dbpath, statpath string
+	var err error
+	var bdb database.Db
+
+	if len(args) == 0 {
+		return nil, errors.New("Path to database required.")
+	}
+
+	if len(args) > 2 {
+		return nil, errors.New("Too many arguments for OpenDB.")
+	}
+
+	dbpath, err = parseString("OpenDB", args[0])
 	if err != nil {
 		return nil, err
 	}
@@ -54,12 +63,28 @@ func OpenDB(args ...interface{}) (database.Db, error) {
 	log = database.GetLog()
 
 	// Open the database, creating the required structure, if necessary.
-	db, err := bolt.Open(dbPath, 0644, &bolt.Options{Timeout: time.Second})
+	db, err := bolt.Open(dbpath, 0644, &bolt.Options{Timeout: time.Second})
 	if err != nil {
 		return nil, err
 	}
 
-	bdb, err := newBoltDB(db)
+	if len(args) == 2 {
+		statpath, err = parseString("OpenDB", args[1])
+		if err != nil {
+			return nil, err
+		}
+
+		// Open the stats file.
+		file, err := os.OpenFile(statpath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
+		if err != nil {
+			return nil, err
+		}
+
+		bdb, err = newBoltDBStats(db, database.NewStatsRecorder(file))
+	} else {
+		bdb, err = newBoltDB(db)
+	}
+
 	if err != nil {
 		return nil, err
 	}
