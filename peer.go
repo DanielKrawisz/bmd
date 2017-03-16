@@ -60,6 +60,6 @@ func NewOutboundPeer(addr string, s *server, stream uint32, persistent bool) *pe
 	sq := peer.NewSend(inventory, s.db)
 	p := peer.NewPeer(s, conn, inventory, sq, na, false, persistent)
 
-	peerLog.Trace("NewOutboundPeer ", addr, " created.")
+	peerLog.Debug("NewOutboundPeer ", addr, " created.")
 	return p
 }

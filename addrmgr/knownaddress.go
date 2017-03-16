@@ -23,7 +23,7 @@ type KnownAddress struct {
 	lastattempt time.Time
 	lastsuccess time.Time
 	tried       bool
-	refs        int // reference count of new buckets
+	refs        uint32 // reference count of new buckets
 }
 
 // NetAddress returns the underlying wire.NetAddress associated with the

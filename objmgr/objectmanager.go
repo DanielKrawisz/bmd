@@ -255,7 +255,7 @@ func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 	if numInvs == 0 {
 		return
 	}
-	log.Trace("Inv received with ", len(requestList), " unknown objects.")
+	log.Debug("Inv received with ", len(requestList), " unknown objects.")
 
 	// If the request can fit, we just request it from the peer that told us
 	// about it in the first place.

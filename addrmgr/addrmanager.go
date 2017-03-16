@@ -205,6 +205,15 @@ func (a *AddrManager) updateAddress(netAddr, srcAddr *wire.NetAddress) {
 		// The more entries we have, the less likely we are to add more.
 		// likelihood is 2N.
 		factor := int32(2 * ka.refs)
+		if factor == 0 {
+			factor = 1
+			log.Error("Invalid refs value 0 found for ", netAddr)
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error("Panic ", r, "; factor = ", factor)
+			}
+		}()
 		if a.rand.Int31n(factor) != 0 {
 			return
 		}
@@ -743,7 +752,7 @@ func ipString(na *wire.NetAddress) string {
 
 // NetAddressKey returns a string key in the form of ip:port for IPv4 addresses
 // or [ip]:port for IPv6 addresses.
-func NetAddressKey(na *wire.NetAddress) string {	
+func NetAddressKey(na *wire.NetAddress) string {
 	port := strconv.FormatUint(uint64(na.Port), 10)
 
 	return net.JoinHostPort(ipString(na), port)
