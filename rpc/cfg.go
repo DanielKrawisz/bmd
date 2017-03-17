@@ -20,6 +20,17 @@ type Config struct {
 	Listeners  []string
 }
 
+func (cfg *Config) String() string {
+	var tls string
+	if cfg.DisableTLS {
+		tls = "false"
+	} else {
+		tls = "true"
+	}
+	
+	return fmt.Sprintf("{tls:%s, user:%s, pass:%s, listeners:%v}", tls, cfg.User, cfg.Pass, cfg.Listeners)
+}
+
 // FileExists reports whether the named file or directory exists.
 func FileExists(name string) bool {
 	if _, err := os.Stat(name); err != nil {
