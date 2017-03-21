@@ -104,7 +104,11 @@ type ObjectManager struct {
 
 	// The set of objects which we do not have and which have not been
 	// assigned to peers for download.
-	unknown map[wire.InvVect]time.Time
+	unknown struct {
+		put  func(wire.InvVect, time.Time)
+		get  func(wire.InvVect) (time.Time, bool)
+		size func() uint32
+	}
 
 	// The set of objects which have been assigned to peers for download.
 	requested map[wire.InvVect]*peerRequest
@@ -113,6 +117,8 @@ type ObjectManager struct {
 	msgChan      chan interface{}
 	wg           sync.WaitGroup
 	quit         chan struct{}
+
+	handleReadyPeer func(*peer.Peer)
 }
 
 // handleNewPeer deals with new peers that have signalled they may
@@ -147,7 +153,7 @@ func (om *ObjectManager) handleDonePeer(p *peer.Peer) {
 		if rqst.peer == p { // peer matches
 			delete(om.requested, invHash)
 
-			om.unknown[invHash] = rqst.knownSince
+			om.unknown.put(invHash, rqst.knownSince)
 
 			reassignInvs++
 		}
@@ -192,7 +198,7 @@ func (om *ObjectManager) handleObjectMsg(omsg *objectMsg) {
 
 	log.Debugf(omsg.peer.PrependAddr(fmt.Sprint("Object ", hash.String()[:8],
 		" received; ", omsg.peer.Inventory.NumRequests(), " still assigned; ", len(om.requested), " still queued; ",
-		len(om.unknown), " unqueued; last receipt = ", now)))
+		om.unknown.size(), " unqueued; last receipt = ", now)))
 
 	om.HandleInsert(omsg.object)
 }
@@ -229,7 +235,7 @@ func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 	requestList := make([]*wire.InvVect, len(imsg.inv.InvList))
 
 	// Request the advertised inventory if we don't already have it.
-	numInvs := 0
+	numInvs := uint32(0)
 	for _, iv := range imsg.inv.InvList {
 		haveInv, err := om.HaveInventory(iv)
 		if err != nil || haveInv {
@@ -237,7 +243,7 @@ func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 		}
 
 		// If the object is already known about, ignore it.
-		if _, ok := om.unknown[*iv]; ok {
+		if _, ok := om.unknown.get(*iv); ok {
 			continue
 		}
 
@@ -279,7 +285,7 @@ func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 		// This can happen if a peer connects and sends an inv message with only
 		// one or two new invs while the initial download is going on, so it
 		// needs to be given a lot more to download.
-		if len(om.unknown) > 0 {
+		if om.unknown.size() > 0 {
 			om.handleReadyPeer(imsg.peer)
 		}
 		return
@@ -288,12 +294,12 @@ func (om *ObjectManager) handleInvMsg(imsg *invMsg) {
 	now := time.Now()
 	// Add the new invs to the list of unknown invs.
 	for _, iv := range requestList[:numInvs] {
-		om.unknown[*iv] = now
+		om.unknown.put(*iv, now)
 	}
 
 	// If the number of unknown objects had been zero before, we have to do
 	// something to get the download process started again.
-	if len(om.unknown) == numInvs {
+	if om.unknown.size() == numInvs {
 		om.assignRequests()
 	}
 }
@@ -307,107 +313,12 @@ func (om *ObjectManager) assignRequests() {
 	log.Trace("Assigning objects to peers for download; number of requested objects: ", len(om.requested))
 
 	for peer := range om.peers {
-		if len(om.unknown) == 0 {
+		if om.unknown.size() == 0 {
 			return
 		}
 
 		// Assign some unknown objects to each peer.
 		om.handleReadyPeer(peer)
-	}
-}
-
-func (om *ObjectManager) handleReadyPeer(p *peer.Peer) {
-	assigned := 0
-
-	// Detect if no peers are working by the end of this function and call
-	// cleanUnknown if so.
-	defer func() {
-		if assigned != 0 {
-			om.working[p] = struct{}{}
-			return
-		}
-		delete(om.working, p)
-		if len(om.working) == 0 {
-			om.cleanUnknown()
-		}
-	}()
-
-	// If there are no objects to get, we don't need to request anything.
-	if len(om.unknown) == 0 {
-		return
-	}
-	log.Trace("Assigning objects to peer ", p.Addr().String())
-
-	// If the object is already downloading too much, return.
-	max := peer.MaxPeerRequests - p.Inventory.NumRequests()
-	if max <= 0 {
-		return
-	}
-
-	requestList := make([]*wire.InvVect, max)
-
-	// Since unknown is a map, the elements come out randomly ordered. Therefore
-	// (for now at least) object request handling does not work like a queue.
-	// We might ask for new invs earlier than old invs, or with any order at all.
-	for iv, knownSince := range om.unknown {
-		if assigned >= max {
-			break
-		}
-
-		// Add an inv in the list of unknown objects to the request list
-		// if the peer knows about it.
-		if !p.Inventory.IsKnown(&iv) {
-			continue
-		}
-
-		if _, ok := om.requested[iv]; ok {
-			log.Error("Object ", (hash.Sha)(iv).String()[:8], " is in both requested objects AND unknown objects. Should not happen!")
-			delete(om.unknown, iv)
-			continue
-		}
-
-		// Add to the list of requested objects and remove from the list of unknown objects.
-		newiv := iv
-		requestList[assigned] = &newiv
-		delete(om.unknown, iv)
-
-		now := time.Now()
-		om.requested[iv] = &peerRequest{
-			peer:       p,
-			timestamp:  now,
-			knownSince: knownSince,
-		}
-
-		assigned++
-	}
-
-	// If there was nothing the peer could give us, return.
-	if assigned == 0 {
-		return
-	}
-
-	log.Trace(assigned, " objects assigned to peer ", p.Addr().String(), ". ", len(om.unknown),
-		" unassigned objects remaining and ", len(om.requested), " total assigned.")
-	p.PushGetDataMsg(requestList[:assigned])
-}
-
-// cleanUnknown is called after all the downloading work is done and it clears
-// out any remaining invs that are not known by any peers.
-func (om *ObjectManager) cleanUnknown() {
-	if len(om.unknown) == 0 {
-		return
-	}
-
-loop:
-	for iv := range om.unknown {
-		for peer := range om.peers {
-			if peer.Inventory.IsKnown(&iv) {
-				peer.PushGetDataMsg([]*wire.InvVect{&iv})
-				continue loop
-			}
-		}
-
-		delete(om.unknown, iv)
 	}
 }
 
@@ -621,20 +532,184 @@ func (om *ObjectManager) Stop() error {
 	return nil
 }
 
+// UpToDateTimer is used to measure how long it takes bmd to be up-to-date
+// with the network.
+type UpToDateTimer struct {
+	Finish   func()
+	Finished func() bool
+}
+
+// StartUpToDateTimer creates an UpToDate timer that uses the logger to record
+// the time.
+func StartUpToDateTimer() *UpToDateTimer {
+	begin := time.Now()
+	finished := false
+
+	return &UpToDateTimer{
+		Finish: func() {
+			if finished {
+				return
+			}
+
+			end := time.Now()
+			log.Infof("Fully up to date with Bitmessage network after %s.", end.Sub(begin).String())
+			finished = true
+		},
+		Finished: func() bool {
+			return finished
+		},
+	}
+}
+
 // NewObjectManager returns a new bitmessage object manager. Use Start to begin
 // processing objects and inv messages asynchronously.
 func NewObjectManager(s server, db database.Db, requestExpire, cleanupInterval time.Duration) *ObjectManager {
+	unk := make(map[wire.InvVect]time.Time)
+
+	// A timer that tests when the object manager is up-to-date with the network.
+	var upToDateTimer *UpToDateTimer
+
+	unknown := struct {
+		put  func(wire.InvVect, time.Time)
+		get  func(wire.InvVect) (time.Time, bool)
+		size func() uint32
+	}{
+		put: func(w wire.InvVect, t time.Time) {
+			if upToDateTimer == nil && len(unk) == 0 {
+				upToDateTimer = StartUpToDateTimer()
+			}
+
+			unk[w] = t
+		},
+		get: func(w wire.InvVect) (time.Time, bool) {
+			t, ok := unk[w]
+			return t, ok
+		},
+		size: func() uint32 {
+			return uint32(len(unk))
+		},
+	}
+
+	del := func(w wire.InvVect) {
+		delete(unk, w)
+
+		if len(unk) == 0 && upToDateTimer != nil && !upToDateTimer.Finished() {
+			upToDateTimer.Finish()
+			upToDateTimer = nil
+		}
+	}
+
+	peers := make(map[*peer.Peer]time.Time)
+	working := make(map[*peer.Peer]struct{})
+	requested := make(map[wire.InvVect]*peerRequest)
+
+	// cleanUnknown is called after all the downloading work is done and it clears
+	// out any remaining invs that are not known by any peers.
+	cleanUnknown := func() {
+		if unknown.size() == 0 {
+			return
+		}
+
+	loop:
+		for iv := range unk {
+			for peer := range peers {
+				if peer.Inventory.IsKnown(&iv) {
+					peer.PushGetDataMsg([]*wire.InvVect{&iv})
+					continue loop
+				}
+			}
+
+			del(iv)
+		}
+	}
+
+	handleReadyPeer := func(p *peer.Peer) {
+		assigned := uint32(0)
+
+		// Detect if no peers are working by the end of this function and call
+		// cleanUnknown if so.
+		defer func() {
+			if assigned != 0 {
+				working[p] = struct{}{}
+				return
+			}
+			delete(working, p)
+			if len(working) == 0 {
+				cleanUnknown()
+			}
+		}()
+
+		// If there are no objects to get, we don't need to request anything.
+		if unknown.size() == 0 {
+			return
+		}
+		log.Trace("Assigning objects to peer ", p.Addr().String())
+
+		// If the object is already downloading too much, return.
+		max := peer.MaxPeerRequests - p.Inventory.NumRequests()
+		if max <= 0 {
+			return
+		}
+
+		requestList := make([]*wire.InvVect, max)
+
+		// Since unknown is a map, the elements come out randomly ordered. Therefore
+		// (for now at least) object request handling does not work like a queue.
+		// We might ask for new invs earlier than old invs, or with any order at all.
+		for iv, knownSince := range unk {
+			if assigned >= max {
+				break
+			}
+
+			// Add an inv in the list of unknown objects to the request list
+			// if the peer knows about it.
+			if !p.Inventory.IsKnown(&iv) {
+				continue
+			}
+
+			if _, ok := requested[iv]; ok {
+				log.Error("Object ", (hash.Sha)(iv).String()[:8], " is in both requested objects AND unknown objects. Should not happen!")
+				del(iv)
+				continue
+			}
+
+			// Add to the list of requested objects and remove from the list of unknown objects.
+			newiv := iv
+			requestList[assigned] = &newiv
+			del(iv)
+
+			now := time.Now()
+			requested[iv] = &peerRequest{
+				peer:       p,
+				timestamp:  now,
+				knownSince: knownSince,
+			}
+
+			assigned++
+		}
+
+		// If there was nothing the peer could give us, return.
+		if assigned == 0 {
+			return
+		}
+
+		log.Trace(assigned, " objects assigned to peer ", p.Addr().String(), ". ", unknown.size(),
+			" unassigned objects remaining and ", len(requested), " total assigned.")
+		p.PushGetDataMsg(requestList[:assigned])
+	}
+
 	return &ObjectManager{
 		requestExpire:   requestExpire,
 		cleanupInterval: cleanupInterval,
 		server:          s,
 		db:              db,
-		requested:       make(map[wire.InvVect]*peerRequest),
-		unknown:         make(map[wire.InvVect]time.Time),
+		requested:       requested,
+		unknown:         unknown,
 		msgChan:         make(chan interface{}),
 		quit:            make(chan struct{}),
-		peers:           make(map[*peer.Peer]time.Time),
-		working:         make(map[*peer.Peer]struct{}),
+		peers:           peers,
+		working:         working,
 		relayInvList:    list.New(),
+		handleReadyPeer: handleReadyPeer,
 	}
 }

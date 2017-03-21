@@ -114,7 +114,7 @@ type Peer struct {
 	// signalReady determines when the peer tells the object manager that it
 	// is ready to request more objects from the remote peer. It does this
 	// when the number of requested objects falls to this amount.
-	signalReady int
+	signalReady uint32
 
 	// The set of addresses known to this peer.
 	knownAddresses map[string]struct{}
@@ -305,30 +305,32 @@ func (p *Peer) PushVerAckMsg() {
 
 // PushGetDataMsg creates a GetData message and sends it to the remote peer.
 func (p *Peer) PushGetDataMsg(ivl []*wire.InvVect) {
-	if len(ivl) == 0 {
+	l := uint32(len(ivl))
+
+	if l == 0 {
 		return
 	}
 
-	p.Inventory.AddRequest(len(ivl))
+	p.Inventory.AddRequest(l)
 	if p.Inventory.NumRequests() > MaxPeerRequests/2 {
 		p.signalReady = p.Inventory.NumRequests() / 2
 	} else {
 		p.signalReady = 0
 	}
-	log.Debug(p.PrependAddr(fmt.Sprint(len(ivl),
+	log.Debug(p.PrependAddr(fmt.Sprint(l,
 		" requests assigned for a total of ", p.Inventory.NumRequests(),
 		"; signal ready at ", p.signalReady)))
 
-	x := 0
-	for len(ivl)-x > wire.MaxInvPerMsg {
+	x := uint32(0)
+	for l-x > wire.MaxInvPerMsg {
 		p.QueueMessage(&wire.MsgInv{InvList: ivl[x : x+wire.MaxInvPerMsg]})
 		log.Debug(p.PrependAddr(fmt.Sprint("get data message sent with ", wire.MaxInvPerMsg, " hashes.")))
 		x += wire.MaxInvPerMsg
 	}
 
-	if len(ivl)-x > 0 {
+	if l-x > 0 {
 		p.QueueMessage(&wire.MsgGetData{InvList: ivl[x:]})
-		log.Debug(p.PrependAddr(fmt.Sprint("Get data message sent with ", len(ivl)-x, " hashes.")))
+		log.Debug(p.PrependAddr(fmt.Sprint("Get data message sent with ", l-x, " hashes.")))
 	}
 }
 
@@ -580,7 +582,7 @@ func (p *Peer) HandleObjectMsg(msg *wire.MsgObject) error {
 		return errors.New("Handshake not complete.")
 	}
 
-	p.Inventory.AddRequest(-1)
+	p.Inventory.DropRequest()
 
 	p.server.ObjectManager().QueueObject(msg, p)
 

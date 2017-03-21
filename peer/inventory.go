@@ -52,13 +52,18 @@ func (I *Inventory) RemoveKnown(invVect *wire.InvVect) {
 }
 
 // AddRequest marks that a certain number of objects have been requested.
-func (I *Inventory) AddRequest(i int) {
+func (I *Inventory) AddRequest(i uint32) {
 	atomic.AddInt32(&I.requested, int32(i))
 }
 
+// DropRequest marks that a certain number of objects have been requested.
+func (I *Inventory) DropRequest() {
+	atomic.AddInt32(&I.requested, -1)
+}
+
 // NumRequests is the number of object download requests that have been made.
-func (I *Inventory) NumRequests() int {
-	return int(atomic.LoadInt32(&I.requested))
+func (I *Inventory) NumRequests() uint32 {
+	return uint32(atomic.LoadInt32(&I.requested))
 }
 
 // FilterKnown takes a list of InvVects, adds them to the list of known
