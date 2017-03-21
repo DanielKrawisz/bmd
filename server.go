@@ -147,7 +147,7 @@ type server struct {
 	wakeup        chan struct{}
 	wg            sync.WaitGroup
 	quit          chan struct{}
-	db            database.Db
+	db            *database.Db
 	rpcServer     *rpcServer
 	nat           NAT
 }
@@ -169,7 +169,7 @@ func (s *server) ObjectManager() peer.ObjectManager {
 }
 
 // Db returns the database. Part of the peer.server interface.
-func (s *server) Db() database.Db {
+func (s *server) Db() *database.Db {
 	return s.db
 }
 
@@ -683,7 +683,7 @@ out:
 
 // newDefaultServer returns a new server with the default listener and
 // initial nodes.
-func newDefaultServer(listenAddrs []string, db database.Db) (*server, error) {
+func newDefaultServer(listenAddrs []string, db *database.Db) (*server, error) {
 	// Set up persistent peers.
 	var persistentPeers []string
 	if cfg.ConnectPeers != nil && len(cfg.ConnectPeers) > 0 {
@@ -697,7 +697,7 @@ func newDefaultServer(listenAddrs []string, db database.Db) (*server, error) {
 
 // newServer returns a new bmd Server configured to listen on addr for the
 // bitmessage network. Use start to begin accepting connections from peers.
-func newServer(listenAddrs []string, db database.Db,
+func newServer(listenAddrs []string, db *database.Db,
 	listen func(string, string) (peer.Listener, error), persistentPeers []string) (*server, error) {
 
 	nonce, err := wire.RandomUint64()

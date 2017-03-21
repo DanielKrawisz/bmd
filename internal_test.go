@@ -41,7 +41,7 @@ func resetCfg(cfg *Config) func() {
 	}
 }
 
-func getMemDb(msgs []obj.Object) database.Db {
+func getMemDb(msgs []obj.Object) *database.Db {
 	db, err := database.OpenDB("memdb")
 	if err != nil {
 		return nil

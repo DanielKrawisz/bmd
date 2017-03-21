@@ -73,7 +73,7 @@ type server interface {
 	Nonce() uint64
 	AddrManager() *addrmgr.AddrManager
 	ObjectManager() ObjectManager
-	Db() database.Db
+	Db() *database.Db
 	DonePeer(*Peer)
 }
 

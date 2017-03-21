@@ -76,7 +76,7 @@ type send struct {
 	// The inventory containing the known objects.
 	inventory *Inventory
 	// The database of objects.
-	db database.Db
+	db *database.Db
 
 	// The state of the send queue.
 	started int32
@@ -308,7 +308,7 @@ func (send *send) PrependAddr(str string) string {
 }
 
 // NewSend returns a new sendQueue object.
-func NewSend(inventory *Inventory, db database.Db) Send {
+func NewSend(inventory *Inventory, db *database.Db) Send {
 	return &send{
 		trickleTime:   time.Second * 10,
 		msgQueue:      make(chan wire.Message, sendQueueSize),
@@ -325,7 +325,7 @@ func NewSend(inventory *Inventory, db database.Db) Send {
 // retrieveObject retrieves an object from the database and decodes it.
 // TODO we actually end up decoding the message and then encoding it again when
 // it is sent. That is not necessary.
-func retrieveObject(db database.Db, inv *wire.InvVect) obj.Object {
+func retrieveObject(db *database.Db, inv *wire.InvVect) obj.Object {
 	obj, err := db.FetchObjectByHash((*hash.Sha)(inv))
 	if err != nil {
 		return nil

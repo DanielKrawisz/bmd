@@ -42,10 +42,10 @@ func parseString(funcName string, arg interface{}) (string, error) {
 }
 
 // OpenDB opens a database, initializing it if necessary.
-func OpenDB(args ...interface{}) (database.Db, error) {
+func OpenDB(args ...interface{}) (*database.Db, error) {
 	var dbpath, statpath string
 	var err error
-	var bdb database.Db
+	var bdb *database.Db
 
 	if len(args) == 0 {
 		return nil, errors.New("Path to database required.")
@@ -80,9 +80,9 @@ func OpenDB(args ...interface{}) (database.Db, error) {
 			return nil, err
 		}
 
-		bdb, err = newBoltDBStats(db, database.NewStatsRecorder(file))
+		bdb, err = newBoltDB(db, database.NewStatsRecorder(file))
 	} else {
-		bdb, err = newBoltDB(db)
+		bdb, err = newBoltDB(db, database.Stats{})
 	}
 
 	if err != nil {

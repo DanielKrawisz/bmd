@@ -91,7 +91,7 @@ type ObjectManager struct {
 	cleanupInterval time.Duration
 
 	server   server
-	db       database.Db
+	db       *database.Db
 	started  int32
 	shutdown int32
 
@@ -563,7 +563,7 @@ func StartUpToDateTimer() *UpToDateTimer {
 
 // NewObjectManager returns a new bitmessage object manager. Use Start to begin
 // processing objects and inv messages asynchronously.
-func NewObjectManager(s server, db database.Db, requestExpire, cleanupInterval time.Duration) *ObjectManager {
+func NewObjectManager(s server, db *database.Db, requestExpire, cleanupInterval time.Duration) *ObjectManager {
 	unk := make(map[wire.InvVect]time.Time)
 
 	// A timer that tests when the object manager is up-to-date with the network.

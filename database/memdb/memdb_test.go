@@ -73,10 +73,6 @@ func TestClosed(t *testing.T) {
 		t.Errorf("RemoveEncryptedPubKey: unexpected error %v", err)
 	}
 
-	if err := db.RemovePublicIdentity(nil); err != database.ErrDbClosed {
-		t.Errorf("RemovePublicIdentity: unexpected error %v", err)
-	}
-
 	if _, err := db.FetchIdentityByAddress(nil); err != database.ErrDbClosed {
 		t.Errorf("FetchIdentityByAddress: unexpected error %v", err)
 	}

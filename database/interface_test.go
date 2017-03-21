@@ -39,7 +39,7 @@ func MakeAddress(version, stream uint64, ripe *hash.Ripe) Address {
 type testContext struct {
 	t      *testing.T
 	dbType string
-	db     database.Db
+	db     *database.Db
 }
 
 // create a new database after clearing out the old one and return the teardown

@@ -33,7 +33,7 @@ func parseArgs(funcName string, args ...interface{}) error {
 }
 
 // OpenDB opens a database, initializing it if necessary.
-func OpenDB(args ...interface{}) (database.Db, error) {
+func OpenDB(args ...interface{}) (*database.Db, error) {
 	if err := parseArgs("OpenDB", args...); err != nil {
 		return nil, err
 	}

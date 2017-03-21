@@ -44,84 +44,84 @@ type ObjectWithCounter struct {
 // the database. This interface is intended to be agnostic to actual mechanism
 // used for backend data storage. The AddDBDriver function can be used to add a
 // new backend data storage method.
-type Db interface {
+type Db struct {
 	// Close cleanly shuts down the database and syncs all data.
-	Close() error
+	Close func() error
 
 	// ExistsObject returns whether or not an object with the given inventory
 	// hash exists in the database.
-	ExistsObject(*hash.Sha) (bool, error)
+	ExistsObject func(*hash.Sha) (bool, error)
 
 	// FetchObjectByHash returns an object from the database as a wire.MsgObject.
-	FetchObjectByHash(*hash.Sha) (obj.Object, error)
+	FetchObjectByHash func(*hash.Sha) (obj.Object, error)
 
 	// FetchObjectByCounter returns the corresponding object based on the
 	// counter. Note that each object type has a different counter, with unknown
 	// objects being consolidated into one counter. Counters are meant for use
 	// as a convenience method for fetching new data from database since last
 	// check.
-	FetchObjectByCounter(wire.ObjectType, uint64) (obj.Object, error)
+	FetchObjectByCounter func(wire.ObjectType, uint64) (obj.Object, error)
 
 	// FetchObjectsFromCounter returns a slice of `count' objects which have a
 	// counter position starting from `counter'. It also returns the counter
 	// value of the last object, which could be useful for more queries to the
 	// function.
-	FetchObjectsFromCounter(objType wire.ObjectType, counter uint64,
+	FetchObjectsFromCounter func(objType wire.ObjectType, counter uint64,
 		count uint64) ([]ObjectWithCounter, uint64, error)
 
 	// FetchIdentityByAddress returns identity.PublicID stored in the form
 	// of a PubKey message in the pubkey database.
-	FetchIdentityByAddress(bmutil.Address) (identity.Public, error)
+	FetchIdentityByAddress func(bmutil.Address) (identity.Public, error)
 
 	// FetchRandomInvHashes returns at most the specified number of
 	// inventory hashes corresponding to random unexpired objects from
 	// the database. It does not guarantee that the number of returned
 	// inventory vectors would be `count'.
-	FetchRandomInvHashes(count uint64) ([]*wire.InvVect, error)
+	FetchRandomInvHashes func(count uint64) ([]*wire.InvVect, error)
 
 	// GetCounter returns the highest value of counter that exists for objects
 	// of the given type.
-	GetCounter(wire.ObjectType) (uint64, error)
+	GetCounter func(wire.ObjectType) (uint64, error)
 
 	// InsertObject inserts the given object into the database and returns the
 	// counter position. If the object is a PubKey, it inserts it into a
 	// separate place where it isn't touched by RemoveObject or
 	// RemoveExpiredObjects and has to be removed using RemovePubKey.
-	InsertObject(obj.Object) (uint64, error)
+	InsertObject func(obj.Object) (uint64, error)
 
 	// RemoveObject removes the object with the specified hash from the
 	// database. Does not remove PubKeys.
-	RemoveObject(*hash.Sha) error
+	RemoveObject func(*hash.Sha) error
 
 	// RemoveObjectByCounter removes the object with the specified counter value
 	// from the database.
-	RemoveObjectByCounter(wire.ObjectType, uint64) error
+	RemoveObjectByCounter func(wire.ObjectType, uint64) error
 
 	// RemoveExpiredObjects prunes all objects in the main circulation store
 	// whose expiry time has passed (along with a margin of 3 hours). This does
 	// not touch the pubkeys stored in the public key collection.
-	RemoveExpiredObjects() ([]*hash.Sha, error)
+	RemoveExpiredObjects func() ([]*hash.Sha, error)
 
 	// RemoveEncryptedPubKey removes a v4 PubKey with the specified tag from the
 	// encrypted PubKey store. Note that it doesn't touch the general object
 	// store and won't remove the public key from there.
-	RemoveEncryptedPubKey(*hash.Sha) error
+	RemoveEncryptedPubKey func(*hash.Sha) error
 
 	// RemoveIdentity removes the public identity corresponding the given
 	// address from the database. This includes any v2/v3/previously used v4
 	// identities. Note that it doesn't touch the general object store and won't
 	// remove the public key object from there.
-	RemoveIdentity(bmutil.Address) error
+	RemoveIdentity func(bmutil.Address) error
 
 	// Get the addresses corresponding to all public identities in the database.
-	GetAllIdentities() ([]bmutil.Address, error)
+	GetAllIdentities func() ([]bmutil.Address, error)
 }
 
 // DriverDB defines a structure for backend drivers to use when they registered
 // themselves as a backend which implements the Db interface.
 type DriverDB struct {
 	DbType string
-	OpenDB func(args ...interface{}) (pbdb Db, err error)
+	OpenDB func(args ...interface{}) (pbdb *Db, err error)
 }
 
 // driverList holds all of the registered database backends.
@@ -138,7 +138,7 @@ func AddDBDriver(instance DriverDB) {
 }
 
 // OpenDB opens a database, initializing it if necessary.
-func OpenDB(dbtype string, args ...interface{}) (pbdb Db, err error) {
+func OpenDB(dbtype string, args ...interface{}) (pbdb *Db, err error) {
 	for _, drv := range driverList {
 		if drv.DbType == dbtype {
 			return drv.OpenDB(args...)

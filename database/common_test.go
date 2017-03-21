@@ -22,7 +22,7 @@ import (
 // should invoke when done testing to clean up. The close flag indicates
 // whether or not the teardown function should sync and close the database
 // during teardown.
-func createDB(dbType string) (database.Db, func(), error) {
+func createDB(dbType string) (*database.Db, func(), error) {
 	// Handle memory database specially since it doesn't need the disk
 	// specific handling.
 	if dbType == "memdb" {
