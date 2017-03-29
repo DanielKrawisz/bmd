@@ -17,6 +17,7 @@ import (
 
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmd/objmgr/stats"
 	"github.com/DanielKrawisz/bmutil/hash"
 	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
@@ -532,42 +533,14 @@ func (om *ObjectManager) Stop() error {
 	return nil
 }
 
-// UpToDateTimer is used to measure how long it takes bmd to be up-to-date
-// with the network.
-type UpToDateTimer struct {
-	Finish   func()
-	Finished func() bool
-}
-
-// StartUpToDateTimer creates an UpToDate timer that uses the logger to record
-// the time.
-func StartUpToDateTimer() *UpToDateTimer {
-	begin := time.Now()
-	finished := false
-
-	return &UpToDateTimer{
-		Finish: func() {
-			if finished {
-				return
-			}
-
-			end := time.Now()
-			log.Infof("Fully up to date with Bitmessage network after %s.", end.Sub(begin).String())
-			finished = true
-		},
-		Finished: func() bool {
-			return finished
-		},
-	}
-}
-
 // NewObjectManager returns a new bitmessage object manager. Use Start to begin
 // processing objects and inv messages asynchronously.
-func NewObjectManager(s server, db *database.Db, requestExpire, cleanupInterval time.Duration) *ObjectManager {
+func NewObjectManager(s server, db *database.Db, requestExpire,
+	cleanupInterval time.Duration, z stats.Stats) *ObjectManager {
 	unk := make(map[wire.InvVect]time.Time)
 
 	// A timer that tests when the object manager is up-to-date with the network.
-	var upToDateTimer *UpToDateTimer
+	var upToDateTimer stats.UpToDateTimer
 
 	unknown := struct {
 		put  func(wire.InvVect, time.Time)
@@ -575,8 +548,8 @@ func NewObjectManager(s server, db *database.Db, requestExpire, cleanupInterval 
 		size func() uint32
 	}{
 		put: func(w wire.InvVect, t time.Time) {
-			if upToDateTimer == nil && len(unk) == 0 {
-				upToDateTimer = StartUpToDateTimer()
+			if len(unk) == 0 {
+				upToDateTimer = z.StartUpToDateTimer()
 			}
 
 			unk[w] = t
@@ -593,9 +566,8 @@ func NewObjectManager(s server, db *database.Db, requestExpire, cleanupInterval 
 	del := func(w wire.InvVect) {
 		delete(unk, w)
 
-		if len(unk) == 0 && upToDateTimer != nil && !upToDateTimer.Finished() {
+		if len(unk) == 0 {
 			upToDateTimer.Finish()
-			upToDateTimer = nil
 		}
 	}
 

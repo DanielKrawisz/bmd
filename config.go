@@ -170,7 +170,10 @@ type Config struct {
 	dial            func(string, string) (net.Conn, error)
 	dnsSeeds        []string
 
-	ObjectStats bool `long:"objectstats" hidden:"true"`
+	// Hidden options for performance monitering. 
+	ObjectStats   bool `long:"objectstats" hidden:"true"`
+	UpToDateTimer bool `long:"uptodatetimer" hidden:"true"`
+	DeleteDb      bool `long:"deletedb" hidden:"true"`
 }
 
 // RPCConfig returns an rpc.Config type constructed from the Config.
@@ -188,6 +191,16 @@ func (cfg *Config) RPCConfig() *rpc.Config {
 	}
 }
 
+// objectDbPath returns the path to the object database given a database type.
+func (cfg *Config) objectDbPath() string {
+	// The database name is based on the database type.
+	dbName := objectDbNamePrefix + "_" + cfg.DbType
+	if cfg.DbType == "sqlite" {
+		dbName = dbName + ".db"
+	}
+	return filepath.Join(cfg.DataDir, dbName)
+}
+
 func (cfg *Config) Validate(appName string) error {
 	funcName := "Validate"
 	usageMessage := fmt.Sprintf("Use %s -h to show usage", appName)
@@ -203,6 +216,18 @@ func (cfg *Config) Validate(appName string) error {
 	err = createDir(cfg.LogDir, "log")
 	if err != nil {
 		return err
+	}
+	
+	if cfg.DeleteDb {
+		dbpath := cfg.objectDbPath()
+		fmt.Println("Deleting database at ", dbpath)
+		
+		if s, _ := os.Stat(dbpath); s != nil {
+			err := os.Remove(dbpath)
+			if err != nil {
+				return err
+			}
+		}
 	}
 
 	// Special show command to list supported subsystems and exit.

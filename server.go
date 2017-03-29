@@ -24,6 +24,7 @@ import (
 	"github.com/DanielKrawisz/bmd/addrmgr"
 	"github.com/DanielKrawisz/bmd/database"
 	"github.com/DanielKrawisz/bmd/objmgr"
+	"github.com/DanielKrawisz/bmd/objmgr/stats"
 	"github.com/DanielKrawisz/bmd/peer"
 	"github.com/DanielKrawisz/bmd/rpc"
 	"github.com/DanielKrawisz/bmutil/wire"
@@ -683,7 +684,7 @@ out:
 
 // newDefaultServer returns a new server with the default listener and
 // initial nodes.
-func newDefaultServer(listenAddrs []string, db *database.Db) (*server, error) {
+func newDefaultServer(listenAddrs []string, db *database.Db, z stats.Stats) (*server, error) {
 	// Set up persistent peers.
 	var persistentPeers []string
 	if cfg.ConnectPeers != nil && len(cfg.ConnectPeers) > 0 {
@@ -692,13 +693,13 @@ func newDefaultServer(listenAddrs []string, db *database.Db) (*server, error) {
 		persistentPeers = cfg.AddPeers
 	}
 
-	return newServer(listenAddrs, db, peer.Listen, persistentPeers)
+	return newServer(listenAddrs, db, peer.Listen, persistentPeers, z)
 }
 
 // newServer returns a new bmd Server configured to listen on addr for the
 // bitmessage network. Use start to begin accepting connections from peers.
 func newServer(listenAddrs []string, db *database.Db,
-	listen func(string, string) (peer.Listener, error), persistentPeers []string) (*server, error) {
+	listen func(string, string) (peer.Listener, error), persistentPeers []string, z stats.Stats) (*server, error) {
 
 	nonce, err := wire.RandomUint64()
 	if err != nil {
@@ -840,7 +841,7 @@ func newServer(listenAddrs []string, db *database.Db,
 		db:          db,
 		nat:         nat,
 	}
-	s.objectManager = objmgr.NewObjectManager(&s, s.db, cfg.RequestExpire, cfg.CleanupInterval)
+	s.objectManager = objmgr.NewObjectManager(&s, s.db, cfg.RequestExpire, cfg.CleanupInterval, z)
 
 	if cfg.EnableRPC {
 		s.rpcServer, err = newRPCServer(&s, cfg.RPCConfig())

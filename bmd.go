@@ -20,6 +20,7 @@ import (
 	"github.com/DanielKrawisz/bmd/database"
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmd/objmgr/stats"
 )
 
 const (
@@ -75,9 +76,28 @@ func bmdMain() error {
 		defer f.Close()
 		defer pprof.StopCPUProfile()
 	}
+	
+	var mgrStats stats.Stats
+	var dbStats database.Stats
+	if cfg.UpToDateTimer || cfg.ObjectStats {
+		// Open the stats file.
+		performanceMonitor, err := os.OpenFile(filepath.Join(cfg.DataDir, "performance.txt"), os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
+		if err != nil {
+			bmdLog.Errorf("Unable to load performance monitor file: %v", err)
+			return err
+		}
+	
+		if cfg.UpToDateTimer {
+			mgrStats = stats.NewFileStatsRecorder(performanceMonitor)
+		}
+		
+		if cfg.ObjectStats {
+			dbStats = database.NewFileStatsRecorder(performanceMonitor)
+		}
+	}
 
 	// Load object database.
-	db, err := setupDB(cfg.DbType, objectDbPath(cfg.DbType), cfg.ObjectStats)
+	db, err := setupDB(cfg.DbType, cfg.objectDbPath(), dbStats)
 	if err != nil {
 		dbLog.Errorf("Failed to initialize database: %v", err)
 		return err
@@ -85,7 +105,7 @@ func bmdMain() error {
 	defer db.Close()
 
 	// Create server and start it.
-	server, err := newDefaultServer(cfg.Listeners, db)
+	server, err := newDefaultServer(cfg.Listeners, db, mgrStats)
 	if err != nil {
 		serverLog.Errorf("Failed to start server on %v: %v", cfg.Listeners,
 			err)
@@ -127,20 +147,9 @@ func main() {
 	}
 }
 
-// objectDbPath returns the path to the object database given a database type.
-func objectDbPath(dbType string) string {
-	// The database name is based on the database type.
-	dbName := objectDbNamePrefix + "_" + dbType
-	if dbType == "sqlite" {
-		dbName = dbName + ".db"
-	}
-	dbPath := filepath.Join(cfg.DataDir, dbName)
-	return dbPath
-}
-
 // setupDB loads (or creates when needed) the object database taking into
 // account the selected database backend.
-func setupDB(dbType, dbPath string, trackObjects bool) (*database.Db, error) {
+func setupDB(dbType, dbPath string, dbStats database.Stats) (*database.Db, error) {
 	// The memdb backend does not have a file path associated with it, so
 	// handle it uniquely.
 	if dbType == "memdb" {
@@ -148,11 +157,7 @@ func setupDB(dbType, dbPath string, trackObjects bool) (*database.Db, error) {
 	}
 	var err error
 	var db *database.Db
-	if trackObjects {
-		db, err = database.OpenDB(dbType, dbPath, filepath.Join(cfg.DataDir, "objlogs.txt"))
-	} else {
-		db, err = database.OpenDB(dbType, dbPath)
-	}
+	db, err = database.OpenDB(dbType, dbPath, dbStats)
 	if err != nil {
 		return nil, err
 	}

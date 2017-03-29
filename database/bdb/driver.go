@@ -11,7 +11,6 @@ package bdb
 import (
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
@@ -36,14 +35,24 @@ func parseString(funcName string, arg interface{}) (string, error) {
 	dbPath, ok := arg.(string)
 	if !ok {
 		return "", fmt.Errorf("First argument to bdb.%s is invalid -- "+
-			"expected database path string", funcName)
+			"expected string", funcName)
 	}
 	return dbPath, nil
 }
 
+// parseStats parses the arguments from the database package Open/Create methods.
+func parseStats(funcName string, arg interface{}) (database.Stats, error) {
+	z, ok := arg.(database.Stats)
+	if !ok {
+		return database.Stats{}, fmt.Errorf("First argument to bdb.%s is invalid -- "+
+			"expected file pointer", funcName)
+	}
+	return z, nil
+}
+
 // OpenDB opens a database, initializing it if necessary.
 func OpenDB(args ...interface{}) (*database.Db, error) {
-	var dbpath, statpath string
+	var dbpath string
 	var err error
 	var bdb *database.Db
 
@@ -69,20 +78,14 @@ func OpenDB(args ...interface{}) (*database.Db, error) {
 	}
 
 	if len(args) == 2 {
-		statpath, err = parseString("OpenDB", args[1])
+		z, err := parseStats("OpenDB", args[1])
 		if err != nil {
 			return nil, err
 		}
 
-		// Open the stats file.
-		file, err := os.OpenFile(statpath, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0660)
-		if err != nil {
-			return nil, err
-		}
-
-		bdb, err = newBoltDB(db, database.NewStatsRecorder(file))
+		bdb, err = newBoltDB(db, z)
 	} else {
-		bdb, err = newBoltDB(db, database.Stats{})
+		bdb, err = newBoltDB(db, database.NewDisabledStatsRecorder())
 	}
 
 	if err != nil {

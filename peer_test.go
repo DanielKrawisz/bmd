@@ -14,6 +14,7 @@ import (
 
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmd/objmgr/stats"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
@@ -105,7 +106,7 @@ func TestOutboundPeerHandshake(t *testing.T) {
 		serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 			MockListen([]*MockListener{
 				NewMockListener(localAddr, make(chan peer.Connection), make(chan struct{}, 1))}),
-			permament)
+			permament, stats.Stats{})
 		if err != nil {
 			t.Fatalf("Server failed to start: %s", err)
 		}
@@ -199,7 +200,8 @@ func TestInboundPeerHandshake(t *testing.T) {
 		var err error
 		serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 			MockListen([]*MockListener{
-				NewMockListener(localAddr, incoming, make(chan struct{}))}), nil)
+				NewMockListener(localAddr, incoming, make(chan struct{}))}),
+				nil, stats.Stats{})
 		if err != nil {
 			t.Fatalf("Server failed to start: %s", err)
 		}
@@ -300,7 +302,8 @@ func TestProcessAddr(t *testing.T) {
 		listeners := []string{net.JoinHostPort("", "8445")}
 		serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 			MockListen([]*MockListener{
-				NewMockListener(localAddr, incoming, make(chan struct{}))}), nil)
+				NewMockListener(localAddr, incoming, make(chan struct{}))}),
+				nil, stats.Stats{})
 		if err != nil {
 			t.Fatal("Server failed to start.")
 		}
@@ -430,7 +433,8 @@ func TestProcessInvAndObjectExchange(t *testing.T) {
 		db := getMemDb(test.peerDB)
 		serv, err := newServer(listeners, db,
 			MockListen([]*MockListener{
-				NewMockListener(localAddr, incoming, make(chan struct{}))}), nil)
+				NewMockListener(localAddr, incoming, make(chan struct{}))}),
+				nil, stats.Stats{})
 		if err != nil {
 			t.Fatal("Server failed to start.")
 		}

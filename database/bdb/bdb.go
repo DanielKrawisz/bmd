@@ -79,31 +79,6 @@ type counter struct {
 	counter    uint64
 }
 
-// BoltDB is an implementation of database.Database interface with boltDB
-// as a backend store.
-/*type boltDB struct {
-	*bolt.DB
-
-	// A queue used to find the expired objects in order.
-	expiration *expiredQueue
-
-	// A map of object hashes to counters.
-	counters map[hash.Sha]counter
-
-	// A stats recorder that tracks data on objects in the network.
-	stats database.Stats
-}*/
-
-/*func newBoltDBStats(db *bolt.DB, ) (*database.Db, error) {
-	bdb, err := newBoltDB(db)
-	if err != nil {
-		return nil, err
-	}
-
-	bdb.stats = r
-	return bdb, nil
-}*/
-
 // newBoltDB creates aan implementation of database.Database interface
 // with boltDB as a backend store.
 func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {

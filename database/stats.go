@@ -21,8 +21,8 @@ func (s Stats) RecordObject(h *hash.Sha, bytes uint64, t time.Time) {
 	}
 }
 
-// NewStatsRecorder creates a new Stats object.
-func NewStatsRecorder(f *os.File) Stats {
+// NewFileStatsRecorder creates a new Stats object.
+func NewFileStatsRecorder(f *os.File) Stats {
 	return Stats{
 		recordObject: func(h *hash.Sha, bytes uint64, t time.Time) {
 			f.WriteString(h.String())
@@ -33,4 +33,9 @@ func NewStatsRecorder(f *os.File) Stats {
 			f.WriteString("\n")
 		},
 	}
+}
+
+// NewDisabledStatsRecorder creates a new Stats object that doesn't do anything.
+func NewDisabledStatsRecorder() Stats {
+	return Stats{}
 }

@@ -109,8 +109,7 @@ func useLogger(subsystemID string, logger btclog.Logger) {
 	}
 }
 
-// initSeelogLogger initializes a new seelog logger that is used as the backend
-// for all logging subsytems.
+// initSeelogLogger initializes a new seelog logger.
 func initSeelogLogger(logFile string) {
 	config := `
 	<seelog type="adaptive" mininterval="2000000" maxinterval="100000000"

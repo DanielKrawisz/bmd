@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/DanielKrawisz/bmd/peer"
+	"github.com/DanielKrawisz/bmd/objmgr/stats"
 	pb "github.com/DanielKrawisz/bmd/rpcproto"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
@@ -211,7 +212,7 @@ func TestRPCConnection(t *testing.T) {
 	listeners := []string{net.JoinHostPort("", "8445")}
 	serv, err := newServer(listeners, getMemDb([]obj.Object{}),
 		MockListen([]*MockListener{
-			NewMockListener(remoteAddr, make(chan peer.Connection), make(chan struct{}, 1))}), nil)
+			NewMockListener(remoteAddr, make(chan peer.Connection), make(chan struct{}, 1))}), nil, stats.Stats{})
 
 	if err != nil {
 		t.Fatalf("Server creation failed: %s", err)
