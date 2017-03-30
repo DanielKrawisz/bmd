@@ -115,6 +115,9 @@ type Db struct {
 
 	// Get the addresses corresponding to all public identities in the database.
 	GetAllIdentities func() ([]bmutil.Address, error)
+
+	// Run a function on every object.
+	ForAllObjects func(func(*hash.Sha, obj.Object) error) error
 }
 
 // DriverDB defines a structure for backend drivers to use when they registered

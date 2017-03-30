@@ -25,6 +25,8 @@ const (
 
 var log = btclog.Disabled
 
+type Now func() time.Time
+
 func init() {
 	driver := database.DriverDB{DbType: "boltdb", OpenDB: OpenDB}
 	database.AddDBDriver(driver)
@@ -50,6 +52,16 @@ func parseStats(funcName string, arg interface{}) (database.Stats, error) {
 	return z, nil
 }
 
+// parseNow parses a function that is used to tell the current time.
+func parseNow(argNumber int, funcName string, arg interface{}) (Now, error) {
+	z, ok := arg.(Now)
+	if !ok {
+		return nil, fmt.Errorf("argument %d of to bdb.%s is invalid -- "+
+			"expected Now", argNumber, funcName)
+	}
+	return z, nil
+}
+
 // OpenDB opens a database, initializing it if necessary.
 func OpenDB(args ...interface{}) (*database.Db, error) {
 	var dbpath string
@@ -60,7 +72,7 @@ func OpenDB(args ...interface{}) (*database.Db, error) {
 		return nil, errors.New("Path to database required.")
 	}
 
-	if len(args) > 2 {
+	if len(args) > 3 {
 		return nil, errors.New("Too many arguments for OpenDB.")
 	}
 
@@ -70,6 +82,8 @@ func OpenDB(args ...interface{}) (*database.Db, error) {
 	}
 
 	log = database.GetLog()
+	now := time.Now
+	z := database.NewDisabledStatsRecorder()
 
 	// Open the database, creating the required structure, if necessary.
 	db, err := bolt.Open(dbpath, 0644, &bolt.Options{Timeout: time.Second})
@@ -77,17 +91,21 @@ func OpenDB(args ...interface{}) (*database.Db, error) {
 		return nil, err
 	}
 
-	if len(args) == 2 {
-		z, err := parseStats("OpenDB", args[1])
+	if len(args) >= 2 {
+		z, err = parseStats("OpenDB", args[1])
 		if err != nil {
 			return nil, err
 		}
-
-		bdb, err = newBoltDB(db, z)
-	} else {
-		bdb, err = newBoltDB(db, database.NewDisabledStatsRecorder())
 	}
 
+	if len(args) >= 3 {
+		now, err = parseNow(3, "OpenDB", args[2])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	bdb, err = NewBoltDB(db, z, now)
 	if err != nil {
 		return nil, err
 	}

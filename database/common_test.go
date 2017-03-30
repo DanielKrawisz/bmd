@@ -12,23 +12,25 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/DanielKrawisz/bmd/database"
-	_ "github.com/DanielKrawisz/bmd/database/bdb"
+	"github.com/DanielKrawisz/bmd/database/bdb"
 	_ "github.com/DanielKrawisz/bmd/database/memdb"
 )
 
-// createDB creates a new db instance and returns a teardown function the caller
+// createDB creates a new db instance and returns a timepasses function and
+// a teardown function the caller
 // should invoke when done testing to clean up. The close flag indicates
 // whether or not the teardown function should sync and close the database
 // during teardown.
-func createDB(dbType string) (*database.Db, func(), error) {
+func createDB(dbType string) (*database.Db, func(), func(), error) {
 	// Handle memory database specially since it doesn't need the disk
 	// specific handling.
 	if dbType == "memdb" {
 		db, err := database.OpenDB(dbType)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error creating db: %v", err)
+			return nil, nil, nil, fmt.Errorf("error creating db: %v", err)
 		}
 
 		// Setup a teardown function for cleaning up. This function is
@@ -37,19 +39,22 @@ func createDB(dbType string) (*database.Db, func(), error) {
 			db.Close()
 		}
 
-		return db, teardown, nil
+		return db, func() {}, teardown, nil
 	}
 
 	// Create temporary file for test database.
 	f, err := ioutil.TempFile("", "bmd_db")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
+	currentTime := time.Now().Add(-20 * time.Minute)
 	// Create a new database.
-	db, err := database.OpenDB(dbType, f.Name())
+	db, err := database.OpenDB(dbType, f.Name(), database.NewDisabledStatsRecorder(), bdb.Now(func() time.Time {
+		return currentTime
+	}))
 	if err != nil {
-		return nil, nil, fmt.Errorf("error creating db: %v", err)
+		return nil, nil, nil, fmt.Errorf("error creating db: %v", err)
 	}
 
 	// Setup a teardown function for cleaning up. This function is
@@ -58,5 +63,7 @@ func createDB(dbType string) (*database.Db, func(), error) {
 		os.Remove(f.Name())
 	}
 
-	return db, teardown, nil
+	return db, func() {
+		currentTime = currentTime.Add(20 * time.Minute)
+	}, teardown, nil
 }

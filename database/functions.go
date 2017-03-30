@@ -5,7 +5,7 @@
 package database
 
 // RemoveAllIdentities clears all public keys from the database.
-func RemoveAllIdentities(db Db) error {
+func (db *Db) RemoveAllIdentities() error {
 	a, err := db.GetAllIdentities()
 	if err != nil {
 		return err

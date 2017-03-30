@@ -554,5 +554,19 @@ func newMemDb() *database.Db {
 
 			return addrs, nil
 		},
+
+		ForAllObjects: func(f func(*hash.Sha, obj.Object) error) error {
+			mtx.RLock()
+			defer mtx.RUnlock()
+
+			for h, o := range objectsByHash {
+				err := f(&h, o)
+				if err != nil {
+					return nil
+				}
+			}
+
+			return nil
+		},
 	}
 }

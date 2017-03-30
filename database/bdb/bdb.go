@@ -23,7 +23,6 @@ import (
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 	"github.com/boltdb/bolt"
-	"github.com/btcsuite/btcd/btcec"
 )
 
 const (
@@ -79,9 +78,9 @@ type counter struct {
 	counter    uint64
 }
 
-// newBoltDB creates aan implementation of database.Database interface
+// NewBoltDB creates aan implementation of database.Database interface
 // with boltDB as a backend store.
-func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
+func NewBoltDB(db *bolt.DB, stats database.Stats, now Now) (*database.Db, error) {
 	q := expiredQueue(make([]*expiration, 0))
 	ex := &q
 	heap.Init(ex)
@@ -333,6 +332,55 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 		return nil
 	}
 
+	fetchObjectByHash := func(hash *hash.Sha) (obj.Object, error) {
+		var o obj.Object
+		var err error
+
+		err = db.View(func(tx *bolt.Tx) error {
+			o, err = objectByHash(tx, hash[:])
+			if err != nil {
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+		return o, nil
+	}
+
+	// A function that applies another function to every object
+	// in the database, halting if an error is returned.
+	forAllObjects := func(f func(*hash.Sha, obj.Object) error) error {
+		err := db.View(func(tx *bolt.Tx) error {
+			tx.Bucket(objectsBucket).ForEach(func(h, o []byte) error {
+				sh, err := hash.NewSha(h)
+				if err != nil {
+					return err
+				}
+
+				ob, err := obj.ReadObject(o)
+				if err != nil {
+					return err
+				}
+
+				err = f(sh, ob)
+				if err != nil {
+					return err
+				}
+
+				return nil
+			})
+
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+
 	// Embed a mutex for safe concurrent access.
 	var mtx sync.RWMutex
 
@@ -347,22 +395,7 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 		},
 
 		// FetchObjectByHash returns an object from the database as a wire.MsgObject.
-		FetchObjectByHash: func(hash *hash.Sha) (obj.Object, error) {
-			var o obj.Object
-			var err error
-
-			err = db.View(func(tx *bolt.Tx) error {
-				o, err = objectByHash(tx, hash[:])
-				if err != nil {
-					return err
-				}
-				return nil
-			})
-			if err != nil {
-				return nil, err
-			}
-			return o, nil
-		},
+		FetchObjectByHash: fetchObjectByHash,
 
 		// FetchObjectByCounter returns the corresponding object based on the
 		// counter. Note that each object type has a different counter, with unknown
@@ -459,14 +492,28 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 					return database.ErrNonexistentObject
 				}
 
-				signKey, err := btcec.ParsePubKey(bucket.Get(signKeyKey), btcec.S256())
+				sig, err := wire.NewPubKey(bucket.Get(signKeyKey))
 				if err != nil {
 					log.Criticalf("Failed to parse public signing key for %s: %v",
 						address, err)
 					return err
 				}
 
-				encKey, err := btcec.ParsePubKey(bucket.Get(encKeyKey), btcec.S256())
+				signKey, err := identity.NewPubKey(sig)
+				if err != nil {
+					log.Criticalf("Failed to parse public signing key for %s: %v",
+						address, err)
+					return err
+				}
+
+				enc, err := wire.NewPubKey(bucket.Get(encKeyKey))
+				if err != nil {
+					log.Criticalf("Failed to parse public encryption key for %s: %v",
+						address, err)
+					return err
+				}
+
+				encKey, err := identity.NewPubKey(enc)
 				if err != nil {
 					log.Criticalf("Failed to parse public encryption key for %s: %v",
 						address, err)
@@ -482,8 +529,8 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 
 				id, err = identity.NewPublic(
 					&identity.PublicKey{
-						Verification: (*identity.PubKey)(signKey),
-						Encryption:   (*identity.PubKey)(encKey),
+						Verification: signKey,
+						Encryption:   encKey,
 					},
 					addr.Version(), addr.Stream(),
 					behavior,
@@ -629,7 +676,7 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 			header := o.Header()
 
 			// Don't insert an object if it is already expired.
-			now := time.Now()
+			now := now()
 			if now.Add(database.ExpiredCacheTime).After(header.Expiration()) {
 				return 0, database.ErrExpired
 			}
@@ -726,7 +773,7 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 			defer mtx.Unlock()
 
 			// Current time - 3 hours
-			t := time.Now().Add(database.ExpiredCacheTime)
+			t := now().Add(database.ExpiredCacheTime)
 
 			r := make([]*hash.Sha, 0, expiredSliceSize)
 
@@ -786,7 +833,7 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 			defer mtx.Unlock()
 
 			hashes := make([]*wire.InvVect, 0, count)
-			now := time.Now()
+			now := now()
 			randomizer := make(map[*hash.Sha]struct{})
 
 			for _, e := range *ex {
@@ -795,14 +842,12 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 				}
 			}
 
-			i := uint64(0)
 			// go ensures that the iteration order is random.
 			for hash := range randomizer {
 				inv := &wire.InvVect{}
 				copy(inv[:], (*hash)[:])
 				hashes = append(hashes, inv)
-				i++
-				if i > count {
+				if uint64(len(hashes)) == count {
 					break
 				}
 			}
@@ -829,6 +874,8 @@ func newBoltDB(db *bolt.DB, stats database.Stats) (*database.Db, error) {
 
 			return addrs, nil
 		},
+
+		ForAllObjects: forAllObjects,
 	}, nil
 }
 

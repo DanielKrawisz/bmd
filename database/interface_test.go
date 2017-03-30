@@ -17,7 +17,10 @@ import (
 
 	"github.com/DanielKrawisz/bmd/database"
 	. "github.com/DanielKrawisz/bmutil"
+	"github.com/DanielKrawisz/bmutil/cipher"
 	"github.com/DanielKrawisz/bmutil/hash"
+	"github.com/DanielKrawisz/bmutil/identity"
+	"github.com/DanielKrawisz/bmutil/pow"
 	"github.com/DanielKrawisz/bmutil/wire"
 	"github.com/DanielKrawisz/bmutil/wire/obj"
 )
@@ -37,21 +40,27 @@ func MakeAddress(version, stream uint64, ripe *hash.Ripe) Address {
 // testContext is used to store context information about a running test which
 // is passed into helper functions.
 type testContext struct {
-	t      *testing.T
-	dbType string
-	db     *database.Db
+	t          *testing.T
+	dbType     string
+	db         *database.Db
+	teardown   func()
+	timepasses func()
 }
 
-// create a new database after clearing out the old one and return the teardown
-// function
-func (tc *testContext) newDb() func() {
+func newTestContext(t *testing.T, dbType string) *testContext {
 	// create fresh database
-	db, teardown, err := createDB(tc.dbType)
+	db, timepasses, teardown, err := createDB(dbType)
 	if err != nil {
-		tc.t.Fatalf("Failed to create test database (%s) %v", tc.dbType, err)
+		t.Fatalf("Failed to create test database (%s) %v", dbType, err)
 	}
-	tc.db = db
-	return teardown
+
+	return &testContext{
+		t:          t,
+		dbType:     dbType,
+		db:         db,
+		teardown:   teardown,
+		timepasses: timepasses,
+	}
 }
 
 var expires = time.Now().Add(10 * time.Minute)
@@ -135,8 +144,7 @@ var testObj = [][]obj.Object{
 
 // testObject tests InsertObject, ExistsObject, FetchObjectByHash, and RemoveObject
 func testObject(tc *testContext) {
-	teardown := tc.newDb()
-	defer teardown()
+	defer tc.teardown()
 
 	for i, object := range testObj {
 		msg := object[0]
@@ -209,218 +217,237 @@ func testObject(tc *testContext) {
 
 // testCounter tests FetchObjectByCounter, FetchObjectsFromCounter,
 // RemoveObjectByCounter, and GetCounter
-func testCounter(tc *testContext) {
-	for i := 0; i < len(testObj); i++ { // test objects that aren't unknown
-		teardown := tc.newDb()
+func testCounter(tc *testContext, testObj, expiredTestObj obj.Object) {
+	// close database
+	defer tc.teardown()
 
-		objType := wire.ObjectType(i)
+	objType := testObj.Header().ObjectType
 
-		// Test that the counter starts at zero.
-		count, err := tc.db.GetCounter(objType)
-		if err != nil {
-			tc.t.Errorf("GetCounter (%s): object type %s, got error %v.",
-				tc.dbType, objType, err)
-		}
-		if count != 0 {
-			tc.t.Errorf("GetCounter (%s): expected 0, got %d", tc.dbType, count)
-		}
-
-		// Try to grab an element that is not there.
-		_, err = tc.db.FetchObjectByCounter(objType, 1)
-		if err == nil {
-			tc.t.Errorf("FetchObjectByCounter (%s): fetching nonexistent"+
-				" object, expected error got none", tc.dbType)
-		}
-
-		// Try to remove an element that is not there.
-		err = tc.db.RemoveObjectByCounter(objType, 1)
-		if err == nil {
-			tc.t.Errorf("RemoveObjectByCounter (%s): removing nonexistent"+
-				" object of type %s, expected error got none",
-				tc.dbType, objType)
-		}
-
-		// Insert an element and make sure the counter comes out correct.
-		msg := testObj[i][0]
-		count, err = tc.db.InsertObject(msg)
-		if err != nil {
-			tc.t.Errorf("InsertObject (%s): object #%d #%d of type %s,"+
-				" got error %v", tc.dbType, i, 0, objType, err)
-		}
-		if count != 1 {
-			tc.t.Errorf("InsertObject (%s): for counter, expected 1 got %d",
-				tc.dbType, count)
-		}
-
-		// Try to fetch an object that should be there now.
-		testMsg, err := tc.db.FetchObjectByCounter(objType, 1)
-		obj.InventoryHash(testMsg) // to make sure it's equal
-
-		if err != nil {
-			tc.t.Errorf("FetchObjectByCounter (%s): fetching object"+
-				" of type %s, got error %v", tc.dbType, objType, err)
-		}
-		if !reflect.DeepEqual(wire.Encode(testMsg), wire.Encode(msg)) {
-			tc.t.Errorf("FetchObjectByCounter (%s): data mismatch", tc.dbType)
-		}
-
-		msg1 := testObj[i][1]
-
-		count, err = tc.db.InsertObject(msg1)
-		if err != nil {
-			tc.t.Errorf("InsertObject (%s): object #%d #%d of type %s,"+
-				" got error %v", tc.dbType, i, 1, objType, err)
-		}
-		if count != 2 {
-			tc.t.Errorf("InsertObject (%s): object #%d #%d of type %s,"+
-				" count error, expected 2, got %d", tc.dbType, i, 1,
-				objType, count)
-		}
-
-		// Try fetching the new object.
-		testMsg, err = tc.db.FetchObjectByCounter(objType, 2)
-		obj.InventoryHash(testMsg) // to make sure it's equal
-
-		if err != nil {
-			tc.t.Errorf("FetchObjectByCounter (%s): fetching existing object"+
-				" of type %s, got error %v", tc.dbType, objType, err)
-		}
-		if !reflect.DeepEqual(wire.Encode(testMsg), wire.Encode(msg1)) {
-			tc.t.Errorf("FetchObjectByCounter (%s): data mismatch", tc.dbType)
-		}
-
-		// Test that the counter has incremented.
-		count, err = tc.db.GetCounter(objType)
-		if err != nil {
-			tc.t.Errorf("GetCounter (%s): object type %s, got error %v",
-				tc.dbType, objType, err)
-		}
-		if count != 2 {
-			tc.t.Errorf("GetCounter (%s): object type %s, expected 2, got %d",
-				tc.dbType, objType, count)
-		}
-
-		// Test FetchObjectsFromCounter for various input values.
-		fetch, n, err := tc.db.FetchObjectsFromCounter(objType, 3, 2)
-		if err != nil {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s, "+
-				"expected empty slice got error %v", tc.dbType, objType, err)
-		}
-		if len(fetch) != 0 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s, "+
-				"incorrect slice size, expected 0, got %d", tc.dbType,
-				objType, len(fetch))
-		}
-		if n != 0 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s, "+
-				"incorrect counter value, expected 0, got %d", tc.dbType,
-				objType, n)
-		}
-
-		fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 1, 3)
-		if err != nil {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" got error %v", tc.dbType, objType, err)
-		}
-		if len(fetch) != 2 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" incorrect slice size: expected 2, got %d", tc.dbType,
-				objType, len(fetch))
-		}
-		if n != 2 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" incorrect counter value: expected 2, got %d", tc.dbType,
-				objType, n)
-		}
-
-		fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 1, 1)
-		if err != nil {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" got error %v", tc.dbType, objType, err)
-		}
-		if len(fetch) != 1 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" incorrect slice size: expected 1, got %d", tc.dbType,
-				objType, len(fetch))
-		}
-		if n != 1 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" incorrect counter value: expected 1, got %d", tc.dbType,
-				objType, n)
-		}
-
-		fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 2, 3)
-		if err != nil {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" got error %v", tc.dbType, objType, err)
-		}
-		if len(fetch) != 1 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" incorrect slice size: expected 2, got %d", tc.dbType,
-				objType, len(fetch))
-		}
-		if n != 2 {
-			tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
-				" incorrect counter value, expected 2 got %d", tc.dbType,
-				objType, n)
-		}
-
-		// Test that objects can be removed after being added.
-		err = tc.db.RemoveObjectByCounter(objType, 1)
-		if err != nil {
-			tc.t.Errorf("RemoveObjectByCounter (%s): object type %s,"+
-				" got error %v", tc.dbType, objType, err)
-		}
-
-		// Removing an object that has already been removed.
-		err = tc.db.RemoveObjectByCounter(objType, 1)
-		if err == nil {
-			tc.t.Errorf("RemoveObjectByCounter (%s): removing already removed"+
-				" object of type %s, got no error", tc.dbType, objType)
-		}
-
-		// Removing a nonexistent object
-		err = tc.db.RemoveObjectByCounter(objType, 3)
-		if err == nil {
-			tc.t.Errorf("RemoveObjectByCounter (%s): removing nonexistent"+
-				" object of type %s, got no error", tc.dbType, objType)
-		}
-
-		// Test that objects cannot be fetched after being removed.
-		_, err = tc.db.FetchObjectByCounter(objType, 1)
-		if err == nil {
-			tc.t.Errorf("FetchObjectByCounter (%s): fetching nonexistent"+
-				" object of type %s, got no error", tc.dbType, objType)
-		}
-
-		// Test that the counter values returned by FetchObjectsFromCounter are
-		// correct after some objects have been removed.
-		fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 1, 3)
-		if err != nil {
-			tc.t.Errorf("FetchObjectByCounter (%s): object type %s,"+
-				" got error %v", tc.dbType, objType, err)
-		}
-		if len(fetch) != 1 {
-			tc.t.Errorf("FetchObjectByCounter (%s): object type %s,"+
-				" incorrect slice size, expected 1 got %d", tc.dbType,
-				objType, len(fetch))
-		}
-		if n != 2 {
-			tc.t.Errorf("FetchObjectByCounter (%s): object type %s,"+
-				" incorrect counter value, expected 2 got %d", tc.dbType,
-				objType, n)
-		}
-
-		// close database
-		teardown()
+	// Test that the counter starts at zero.
+	count, err := tc.db.GetCounter(objType)
+	if err != nil {
+		tc.t.Errorf("GetCounter (%s): object type %s, got error %v.",
+			tc.dbType, objType, err)
 	}
+	if count != 0 {
+		tc.t.Errorf("GetCounter (%s): expected 0, got %d", tc.dbType, count)
+	}
+
+	// Try to grab an element that is not there.
+	_, err = tc.db.FetchObjectByCounter(objType, 1)
+	if err == nil {
+		tc.t.Errorf("FetchObjectByCounter (%s): fetching nonexistent"+
+			" object, expected error got none", tc.dbType)
+	}
+
+	// Try to remove an element that is not there.
+	err = tc.db.RemoveObjectByCounter(objType, 1)
+	if err == nil {
+		tc.t.Errorf("RemoveObjectByCounter (%s): removing nonexistent"+
+			" object of type %s, expected error got none",
+			tc.dbType, objType)
+	}
+
+	// Insert an element and make sure the counter comes out correct.
+	//msg := testObj[i][0]
+	count, err = tc.db.InsertObject(testObj)
+	if err != nil {
+		tc.t.Errorf("testCounter(dbtype:%s, objtype:%s) testObj"+
+			" got error %v", tc.dbType, objType.String(), err)
+	}
+	if count != 1 {
+		tc.t.Errorf("InsertObject (%s): for counter, expected 1 got %d",
+			tc.dbType, count)
+	}
+
+	// Try to fetch an object that should be there now.
+	testMsg, err := tc.db.FetchObjectByCounter(objType, 1)
+	obj.InventoryHash(testMsg) // to make sure it's equal
+
+	if err != nil {
+		tc.t.Errorf("FetchObjectByCounter (%s): fetching object"+
+			" of type %s, got error %v", tc.dbType, objType, err)
+	}
+	if !reflect.DeepEqual(wire.Encode(testMsg), wire.Encode(testObj)) {
+		tc.t.Errorf("FetchObjectByCounter (%s): data mismatch", tc.dbType)
+	}
+
+	count, err = tc.db.InsertObject(expiredTestObj)
+	if err != nil {
+		tc.t.Errorf("testCounter(dbtype:%s, objtype:%s) expiredTestObj"+
+			" got error %v", tc.dbType, objType.String(), err)
+	}
+	if count != 2 {
+		tc.t.Errorf("InsertObject (%s): object of type %s,"+
+			" count error, expected 2, got %d", tc.dbType,
+			objType, count)
+	}
+
+	// Try fetching the new object.
+	testMsg, err = tc.db.FetchObjectByCounter(objType, 2)
+	if err != nil {
+		tc.t.Fatalf("Could not retrieve object: ", err)
+	}
+	obj.InventoryHash(testMsg) // to make sure it's equal
+
+	if err != nil {
+		tc.t.Errorf("FetchObjectByCounter (%s): fetching existing object"+
+			" of type %s, got error %v", tc.dbType, objType, err)
+	}
+	if !reflect.DeepEqual(wire.Encode(testMsg), wire.Encode(expiredTestObj)) {
+		tc.t.Errorf("FetchObjectByCounter (%s): data mismatch", tc.dbType)
+	}
+
+	// Test that the counter has incremented.
+	count, err = tc.db.GetCounter(objType)
+	if err != nil {
+		tc.t.Errorf("GetCounter (%s): object type %s, got error %v",
+			tc.dbType, objType, err)
+	}
+	if count != 2 {
+		tc.t.Errorf("GetCounter (%s): object type %s, expected 2, got %d",
+			tc.dbType, objType, count)
+	}
+
+	// Test FetchObjectsFromCounter for various input values.
+	fetch, n, err := tc.db.FetchObjectsFromCounter(objType, 3, 2)
+	if err != nil {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s, "+
+			"expected empty slice got error %v", tc.dbType, objType, err)
+	}
+	if len(fetch) != 0 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s, "+
+			"incorrect slice size, expected 0, got %d", tc.dbType,
+			objType, len(fetch))
+	}
+	if n != 0 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s, "+
+			"incorrect counter value, expected 0, got %d", tc.dbType,
+			objType, n)
+	}
+
+	fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 1, 3)
+	if err != nil {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" got error %v", tc.dbType, objType, err)
+	}
+	if len(fetch) != 2 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" incorrect slice size: expected 2, got %d", tc.dbType,
+			objType, len(fetch))
+	}
+	if n != 2 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" incorrect counter value: expected 2, got %d", tc.dbType,
+			objType, n)
+	}
+
+	fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 1, 1)
+	if err != nil {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" got error %v", tc.dbType, objType, err)
+	}
+	if len(fetch) != 1 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" incorrect slice size: expected 1, got %d", tc.dbType,
+			objType, len(fetch))
+	}
+	if n != 1 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" incorrect counter value: expected 1, got %d", tc.dbType,
+			objType, n)
+	}
+
+	fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 2, 3)
+	if err != nil {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" got error %v", tc.dbType, objType, err)
+	}
+	if len(fetch) != 1 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" incorrect slice size: expected 2, got %d", tc.dbType,
+			objType, len(fetch))
+	}
+	if n != 2 {
+		tc.t.Errorf("FetchObjectsFromCounter (%s): object type %s,"+
+			" incorrect counter value, expected 2 got %d", tc.dbType,
+			objType, n)
+	}
+
+	// Test that objects can be removed after being added.
+	err = tc.db.RemoveObjectByCounter(objType, 1)
+	if err != nil {
+		tc.t.Errorf("RemoveObjectByCounter (%s): object type %s,"+
+			" got error %v", tc.dbType, objType, err)
+	}
+
+	// Removing an object that has already been removed.
+	err = tc.db.RemoveObjectByCounter(objType, 1)
+	if err == nil {
+		tc.t.Errorf("RemoveObjectByCounter (%s): removing already removed"+
+			" object of type %s, got no error", tc.dbType, objType)
+	}
+
+	// Removing a nonexistent object
+	err = tc.db.RemoveObjectByCounter(objType, 3)
+	if err == nil {
+		tc.t.Errorf("RemoveObjectByCounter (%s): removing nonexistent"+
+			" object of type %s, got no error", tc.dbType, objType)
+	}
+
+	// Test that objects cannot be fetched after being removed.
+	_, err = tc.db.FetchObjectByCounter(objType, 1)
+	if err == nil {
+		tc.t.Errorf("FetchObjectByCounter (%s): fetching nonexistent"+
+			" object of type %s, got no error", tc.dbType, objType)
+	}
+
+	// Test that the counter values returned by FetchObjectsFromCounter are
+	// correct after some objects have been removed.
+	fetch, n, err = tc.db.FetchObjectsFromCounter(objType, 1, 3)
+	if err != nil {
+		tc.t.Errorf("FetchObjectByCounter (%s): object type %s,"+
+			" got error %v", tc.dbType, objType, err)
+	}
+	if len(fetch) != 1 {
+		tc.t.Errorf("FetchObjectByCounter (%s): object type %s,"+
+			" incorrect slice size, expected 1 got %d", tc.dbType,
+			objType, len(fetch))
+	}
+	if n != 2 {
+		tc.t.Errorf("FetchObjectByCounter (%s): object type %s,"+
+			" incorrect counter value, expected 2 got %d", tc.dbType,
+			objType, n)
+	}
+}
+
+func makeIdentity(passphrase string, version uint64, expiration time.Duration) (Address, obj.Object) {
+	pi, err := identity.NewDeterministicPrivateID(passphrase, 1, version, 1, 1, &pow.Default)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	pk, err := cipher.GeneratePubKey(pi, expiration)
+	if err != nil {
+		panic(err.Error())
+	}
+
+	return pi.Public().Address(), pk.Object()
+}
+
+func writeExpiration(msg []byte, expiration time.Time) {
+	var b bytes.Buffer
+	wire.WriteElement(&b, uint64(expiration.Unix()))
+	exp := b.Bytes()
+	copy(msg[8:16], exp)
 }
 
 // testPubKey tests inserting public key messages, FetchIdentityByAddress,
 // RemoveEncryptedPubKey and RemoveIdentity
 func testPubKey(tc *testContext) {
-	teardown := tc.newDb()
-	defer teardown()
+	defer tc.teardown()
+
+	expiration := time.Now().Add(time.Hour)
 
 	// test inserting invalid public key
 	invalidPubkeyBytes := []byte{
@@ -433,6 +460,7 @@ func testPubKey(tc *testContext) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Signing Key
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // Encrypt Key
 	}
+	writeExpiration(invalidPubkeyBytes, expiration)
 	invalidPubkey := new(wire.MsgObject)
 	invalidPubkey.Decode(bytes.NewReader(invalidPubkeyBytes))
 	_, err := tc.db.InsertObject(invalidPubkey)
@@ -475,6 +503,7 @@ func testPubKey(tc *testContext) {
 	addrV2, _ := DecodeAddress("BM-orNprZ3PNHsLgK5CQMgRoje1aCKgRA4QP")
 	data, _ := hex.DecodeString("000000000000000000000000000000000000000102010000000187b541daefffc4b5ad1e61579e30c049709247630305e7962dcdf9ea2d0ef3e10ede4864ea5cfb42bd4ffa8b6f713490f106333b4e2ea8aed7b1ec7a7713958b380c6bac1f9742ef20fde832d0321a0643104ad98a91cf31f8ea0d28aa9886f19369ec065eafd823ae2c661cd586b111f72f18aa0b68db57f553f9b86f182f8f")
 	msg := new(wire.MsgObject)
+	writeExpiration(data, expiration)
 	err = msg.Decode(bytes.NewReader(data))
 	if err != nil {
 		tc.t.Fatal("failed to decode v2 pubkey, got error", err)
@@ -490,15 +519,9 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test inserting valid v3 public key
-	addrV3, _ := DecodeAddress("BM-2D7oboD97WDibFcc792gkZjkvb3JQARiQx")
-	data, _ = hex.DecodeString("0000000001FB575F000000005581B73A00000001030100000001520A752F43BD36DA5BD2C77FDB7E53C597EB21BDA6BD08A80AC2F4ACC3D885DE19945F02D6D18A655FD831F071B6224E0F145F7C3138BE07DB7C4C9C8BD234DD8333DA6BA201B9893982B28B740AB6252E3A146677A1EDE15F567F15D8E8C83EAD7547AC132D008418330810243A43DBCF2DD39C5283913ED6BD6C1A3B468271FD03E8FD03E8473045022100AB37F26D1709E43FD24852273033D97764F2498E170422EDC6775FADE21F7A9502206FEB2527BBCAF77E7D07BAF6FCD2F4ED49B8B4D1C3FCE7DEB6149D7E9DF3CD95")
-	msg = new(wire.MsgObject)
-	err = msg.Decode(bytes.NewReader(data))
-	if err != nil {
-		tc.t.Fatal("failed to decode v3 pubkey, got error", err)
-	}
+	addrV3, pkV3 := makeIdentity("test addr v3", 3, time.Hour)
 
-	counter, err = tc.db.InsertObject(msg)
+	counter, err = tc.db.InsertObject(pkV3)
 	if err != nil {
 		tc.t.Errorf("InsertObject (%s): got error %v", tc.dbType, err)
 	}
@@ -508,15 +531,9 @@ func testPubKey(tc *testContext) {
 	}
 
 	// test inserting valid v4 public key
-	addrV4, _ := DecodeAddress("BM-2cTFEueNqmjgR3EqduEZmaZbEW1h9z7M7o")
-	data, _ = hex.DecodeString("00000000025A04D60000000055A4EA7C0000000104017F933D64A866DE24C27D647C74068A59DCEE0CABFC1DF887BE7DD30BA3BD9143D513F0B37087891F6A98DD0B55B1A73E02CA002090CE6A050E760F52D18F7F50B1B9139DBCEF861254C195173AA601DE8A72B52E00206FAF91EDD32E213097CD91E4ACBB883CB2F8CC6AAFCC670DDE1FAC52C210469D71B08A162E07C4B8926A50CC0701594AF55D65052C2D9D74CE28BB571D781423C101BDC8DB6CE3FA639BDDE9CE39364307188470AEC410F7EE2BCC008CA6B1F2A37CF0841FC5EDE154C172438061577FBF3BC6BCDAAAB9BBCC90378DE815A99B0B78D81DFC9ABE33F99B4BC2AFAC2101ED7E0E213C00011FF3583B1E2BAADEF4BED2DB17F340258C22D38F8B490040B94E01F76F2118D90D718FFAFFB7D8F2A9F2B3498D45D528F16BCE55B43E63AAF3AED720F0AC06FCEB853661ACE13714069AA47A3D2FD6180AD0458B344E7AF04A26A25490DCEF236EE29CDF2FD96CDF55EB2B0D4DACA1EC21B4049DB6A6C713A2350D6ECE4C77C01DA01BCAAB2F2CBB31")
-	msg = new(wire.MsgObject)
-	err = msg.Decode(bytes.NewReader(data))
-	if err != nil {
-		tc.t.Fatal("failed to decode v4 pubkey, got error", err)
-	}
+	addrV4, pkV4 := makeIdentity("test addr v4", 4, time.Hour)
 
-	counter, err = tc.db.InsertObject(msg)
+	counter, err = tc.db.InsertObject(pkV4)
 	if err != nil {
 		tc.t.Errorf("InsertObject (%s): got error %v", tc.dbType, err)
 	}
@@ -531,7 +548,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
-	} else if !reflect.DeepEqual(idV2.Address, addrV2) {
+	} else if idV2.Address().String() != addrV2.String() {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -541,7 +558,7 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
-	} else if !reflect.DeepEqual(idV3.Address, addrV3) {
+	} else if idV3.Address().String() != addrV3.String() {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -549,10 +566,10 @@ func testPubKey(tc *testContext) {
 	// v4 address
 	idV4, err := tc.db.FetchIdentityByAddress(addrV4)
 	if err != nil {
-		tc.t.Errorf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
+		tc.t.Fatalf("FetchIdentityByAddress (%s): got error %v", tc.dbType,
 			err)
 	}
-	if !reflect.DeepEqual(idV4.Address, addrV4) {
+	if idV4.Address().String() != addrV4.String() {
 		tc.t.Errorf("FetchIdentityByAddress (%s): identities not equal",
 			tc.dbType)
 	}
@@ -572,11 +589,12 @@ func testPubKey(tc *testContext) {
 	if err != nil {
 		tc.t.Fatal("failed to decode v4 pubkey, got error", err)
 	}
-	_, err = tc.db.InsertObject(msg)
+	addr, pk := makeIdentity("test addr abcdqdbbbb", 4, time.Hour)
+	_, err = tc.db.InsertObject(pk)
 	if err != nil {
 		tc.t.Errorf("InsertObject (%s): got error %v", tc.dbType, err)
 	}
-	tag, _ = hash.NewSha(msg.Payload()[:32])
+	tag, _ = hash.NewSha(pk.Payload()[:32])
 	err = tc.db.RemoveEncryptedPubKey(tag)
 	if err != nil {
 		tc.t.Errorf("RemoveEncryptedPubKey (%s): got error %v", tc.dbType, err)
@@ -628,8 +646,7 @@ func testPubKey(tc *testContext) {
 
 // tests FetchRandomInvHashes and FilterObjects
 func testFilters(tc *testContext) {
-	teardown := tc.newDb()
-	defer teardown()
+	defer tc.teardown()
 
 	for _, messages := range testObj {
 		for _, msg := range messages {
@@ -661,8 +678,7 @@ func testFilters(tc *testContext) {
 }
 
 func testRemoveExpiredObjects(tc *testContext) {
-	teardown := tc.newDb()
-	defer teardown()
+	defer tc.teardown()
 
 	for _, messages := range testObj {
 		for _, msg := range messages {
@@ -670,6 +686,7 @@ func testRemoveExpiredObjects(tc *testContext) {
 		}
 	}
 
+	tc.timepasses()
 	tc.db.RemoveExpiredObjects()
 
 	for i, messages := range testObj {
@@ -699,12 +716,13 @@ func testRemoveExpiredObjects(tc *testContext) {
 // testInterface tests performs tests for the various interfaces of the database
 // package which require state in the database for the given database type.
 func testInterface(t *testing.T, dbType string) {
-	// Create a test context to pass around.
-	context := &testContext{t: t, dbType: dbType}
+	testObject(newTestContext(t, dbType))
+	testPubKey(newTestContext(t, dbType))
+	testRemoveExpiredObjects(newTestContext(t, dbType))
 
-	//testObject(context)
-	//testPubKey(context)
-	testRemoveExpiredObjects(context)
-	//testCounter(context)
-	//testFilters(context)
+	// test objects that aren't unknown
+	for i := 0; i < len(testObj); i++ {
+		testCounter(newTestContext(t, dbType), testObj[i][0], testObj[i][1])
+	}
+	testFilters(newTestContext(t, dbType))
 }

@@ -54,7 +54,7 @@ func TestAddDuplicateDriver(t *testing.T) {
 	// Ensure creating a database of the type that we tried to replace
 	// doesn't fail (if it does, it indicates the driver was erroneously
 	// replaced).
-	_, teardown, err := createDB(dbType)
+	_, _, teardown, err := createDB(dbType)
 	if err != nil {
 		t.Errorf("TestAddDuplicateDriver: %v", err)
 		return
